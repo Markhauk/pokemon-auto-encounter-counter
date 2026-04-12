@@ -1,4 +1,5 @@
 import argparse
+import csv
 import json
 import os
 import signal
@@ -17,10 +18,14 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 OUTPUT_DIR = BASE_DIR / "output"
+
 COUNTER_FILE = OUTPUT_DIR / "counter.txt"
 STATE_FILE = OUTPUT_DIR / "state.json"
 LOCK_FILE = OUTPUT_DIR / "encounter_counter.lock"
 DEBUG_FRAME_FILE = OUTPUT_DIR / "last_capture.png"
+
+ENCOUNTER_LOG_CSV_FILE = OUTPUT_DIR / "encounter_log.csv"
+EVENT_LOG_JSONL_FILE = OUTPUT_DIR / "event_log.jsonl"
 
 CAPTURE_REGION = {
     "top": 1100,
@@ -40,6 +45,22 @@ MATCH_LOG_EVERY_N_FRAMES = 5
 PREVIEW_MATCH_THRESHOLD = 0.60
 NEAR_BLACK_MEAN_THRESHOLD = 5.0
 NEAR_BLACK_MAX_THRESHOLD = 20
+
+EVENT_LOG_CSV_FIELDS = [
+    "timestamp",
+    "event",
+    "counter",
+    "catch_counter",
+    "last_event",
+    "last_event_at",
+    "last_match_score",
+    "last_catch_at_encounter",
+    "encounters_since_last_catch",
+    "capture_top",
+    "capture_left",
+    "capture_width",
+    "capture_height",
+]
 
 
 @dataclass
@@ -166,6 +187,7 @@ class EncounterCounter:
         self.waiting_for_clear = False
 
         self.ensure_directories()
+        self.ensure_log_files()
         self.load_state()
         self.save_state()
 
@@ -179,6 +201,15 @@ class EncounterCounter:
     def ensure_directories(self) -> None:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+
+    def ensure_log_files(self) -> None:
+        if not ENCOUNTER_LOG_CSV_FILE.exists() or ENCOUNTER_LOG_CSV_FILE.stat().st_size == 0:
+            with ENCOUNTER_LOG_CSV_FILE.open("w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=EVENT_LOG_CSV_FIELDS)
+                writer.writeheader()
+
+        if not EVENT_LOG_JSONL_FILE.exists():
+            EVENT_LOG_JSONL_FILE.write_text("", encoding="utf-8")
 
     def load_template(self, filename: str) -> np.ndarray:
         path = TEMPLATES_DIR / filename
@@ -255,6 +286,33 @@ class EncounterCounter:
     def now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+    def build_event_payload(self, event_name: str, score: float) -> dict[str, object]:
+        return {
+            "timestamp": self.now_iso(),
+            "event": event_name,
+            "counter": self.counter,
+            "catch_counter": self.catch_counter,
+            "last_event": self.last_event,
+            "last_event_at": self.last_event_at or "",
+            "last_match_score": round(float(score), 6),
+            "last_catch_at_encounter": self.last_catch_at_encounter,
+            "encounters_since_last_catch": self.encounters_since_last_catch,
+            "capture_top": self.capture_region["top"],
+            "capture_left": self.capture_region["left"],
+            "capture_width": self.capture_region["width"],
+            "capture_height": self.capture_region["height"],
+        }
+
+    def append_event_log(self, event_name: str, score: float) -> None:
+        payload = self.build_event_payload(event_name, score)
+
+        with ENCOUNTER_LOG_CSV_FILE.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=EVENT_LOG_CSV_FIELDS)
+            writer.writerow(payload)
+
+        with EVENT_LOG_JSONL_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
     def screenshot_region(self) -> np.ndarray:
         with mss.mss() as sct:
             shot = sct.grab(self.capture_region)
@@ -316,6 +374,8 @@ class EncounterCounter:
             self.encounters_since_last_catch = self.counter
 
         self.save_state()
+        self.append_event_log("got_away", score)
+
         self.log(f"Matched got_away.png with score {score:.3f}")
         self.log(
             f"Got away detected. Encounters={self.counter}, "
@@ -333,6 +393,8 @@ class EncounterCounter:
         self.last_match_score = score
 
         self.save_state()
+        self.append_event_log("gotcha", score)
+
         self.log(f"Matched gotcha.png with score {score:.3f}")
         self.log(
             f"Gotcha detected. Encounters={self.counter}, "
@@ -408,6 +470,8 @@ class EncounterCounter:
         self.log(f"Current encounters: {self.counter}")
         self.log(f"Current catches: {self.catch_counter}")
         self.log(f"Capture region: {self.capture_region}")
+        self.log(f"CSV log: {ENCOUNTER_LOG_CSV_FILE}")
+        self.log(f"JSONL log: {EVENT_LOG_JSONL_FILE}")
         self.log("Mode: got-away + gotcha")
         self.log("Press Ctrl+C to stop. On Windows, Ctrl+Break also works.")
 
