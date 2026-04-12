@@ -28,7 +28,7 @@ ENCOUNTER_LOG_CSV_FILE = OUTPUT_DIR / "encounter_log.csv"
 EVENT_LOG_JSONL_FILE = OUTPUT_DIR / "event_log.jsonl"
 
 CAPTURE_REGION = {
-    "top": 1100,
+    "top": 1060,
     "left": 282,
     "width": 935,
     "height": 132,
@@ -39,7 +39,7 @@ SCAN_INTERVAL_SECONDS = 0.10
 ESCAPE_THRESHOLD = 0.85
 GOTCHA_THRESHOLD = 0.85
 POST_DETECTION_COOLDOWN_SECONDS = 5.0
-SAVE_DEBUG_FRAMES = True
+SAVE_DEBUG_FRAMES = False
 DEBUG_SAVE_EVERY_N_FRAMES = 1
 MATCH_LOG_EVERY_N_FRAMES = 5
 PREVIEW_MATCH_THRESHOLD = 0.60
@@ -162,20 +162,16 @@ class EncounterCounter:
     ) -> None:
         self.running = True
 
-        # Main counters
         self.counter = 0
         self.catch_counter = 0
 
-        # Last-event state
         self.last_event = "none"
         self.last_event_at: Optional[str] = None
         self.last_match_score = 0.0
 
-        # Catch-related state
         self.last_catch_at_encounter = 0
         self.encounters_since_last_catch = 0
 
-        # Capture/runtime state
         self.capture_region = dict(capture_region or CAPTURE_REGION)
         self.save_debug_frames = save_debug_frames
         self.debug_once = debug_once
@@ -211,16 +207,30 @@ class EncounterCounter:
         if not EVENT_LOG_JSONL_FILE.exists():
             EVENT_LOG_JSONL_FILE.write_text("", encoding="utf-8")
 
+    def _print(self, message: str) -> None:
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[{timestamp}] {message}")
+
+    def log_debug(self, message: str) -> None:
+        if self.verbose_debug or self.debug_once:
+            self._print(message)
+
+    def log_event(self, message: str) -> None:
+        self._print(message)
+
+    def log_error(self, message: str) -> None:
+        self._print(message)
+
     def load_template(self, filename: str) -> np.ndarray:
         path = TEMPLATES_DIR / filename
         if not path.exists():
-            print(f"[ERROR] Missing template: {path}")
-            print("Create the template image and try again.")
+            self.log_error(f"[ERROR] Missing template: {path}")
+            self.log_error("Create the template image and try again.")
             sys.exit(1)
 
         template = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if template is None:
-            print(f"[ERROR] Failed to load template: {path}")
+            self.log_error(f"[ERROR] Failed to load template: {path}")
             sys.exit(1)
         return template
 
@@ -229,7 +239,7 @@ class EncounterCounter:
             try:
                 self.counter = int(COUNTER_FILE.read_text(encoding="utf-8").strip())
             except ValueError:
-                print("[WARN] counter.txt was invalid. Starting from 0.")
+                self.log_error("[WARN] counter.txt was invalid. Starting from 0.")
                 self.counter = 0
 
         if STATE_FILE.exists():
@@ -251,7 +261,7 @@ class EncounterCounter:
                 )
 
             except (json.JSONDecodeError, ValueError, TypeError):
-                print("[WARN] state.json was invalid. Using defaults.")
+                self.log_error("[WARN] state.json was invalid. Using defaults.")
 
         if self.last_catch_at_encounter > 0:
             self.encounters_since_last_catch = max(
@@ -278,10 +288,6 @@ class EncounterCounter:
             ),
             encoding="utf-8",
         )
-
-    def log(self, message: str) -> None:
-        timestamp = time.strftime("%H:%M:%S")
-        print(f"[{timestamp}] {message}")
 
     def now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -323,25 +329,24 @@ class EncounterCounter:
             stats = compute_brightness_stats(gray)
             self.frame_index += 1
 
-            if self.verbose_debug or self.debug_once:
-                self.log(
-                    "Capture stats: "
-                    f"shape={frame_bgr.shape}, min={stats.min_value}, max={stats.max_value}, "
-                    f"mean={stats.mean_value:.2f}, std={stats.std_value:.2f}, "
-                    f"nonzero_ratio={stats.nonzero_ratio:.4f}"
-                )
+            self.log_debug(
+                "Capture stats: "
+                f"shape={frame_bgr.shape}, min={stats.min_value}, max={stats.max_value}, "
+                f"mean={stats.mean_value:.2f}, std={stats.std_value:.2f}, "
+                f"nonzero_ratio={stats.nonzero_ratio:.4f}"
+            )
 
             if self.save_debug_frames and (self.frame_index % DEBUG_SAVE_EVERY_N_FRAMES == 0):
                 try:
                     save_image(DEBUG_FRAME_FILE, frame_bgr)
                 except RuntimeError:
-                    self.log(f"[WARN] Failed to save debug frame to: {DEBUG_FRAME_FILE}")
+                    self.log_debug(f"[WARN] Failed to save debug frame to: {DEBUG_FRAME_FILE}")
 
             if is_nearly_black(stats):
                 now = time.time()
                 if (now - self.last_black_frame_warning_time) >= BLACK_FRAME_WARNING_COOLDOWN_SECONDS:
                     self.last_black_frame_warning_time = now
-                    self.log(
+                    self.log_debug(
                         "[WARN] Capture is black or nearly black. Possible causes: wrong monitor/region, "
                         "OBS preview on another monitor, minimized window, protected/hardware-accelerated content."
                     )
@@ -360,7 +365,7 @@ class EncounterCounter:
         self.cooldown_until = time.time() + POST_DETECTION_COOLDOWN_SECONDS
         self.waiting_for_clear = True
         self.save_state()
-        self.log(f"Cooldown started for {POST_DETECTION_COOLDOWN_SECONDS:.1f} seconds.")
+        self.log_debug(f"Cooldown started for {POST_DETECTION_COOLDOWN_SECONDS:.1f} seconds.")
 
     def record_got_away(self, score: float) -> None:
         self.counter += 1
@@ -376,11 +381,9 @@ class EncounterCounter:
         self.save_state()
         self.append_event_log("got_away", score)
 
-        self.log(f"Matched got_away.png with score {score:.3f}")
-        self.log(
-            f"Got away detected. Encounters={self.counter}, "
-            f"catches={self.catch_counter}, "
-            f"since_last_catch={self.encounters_since_last_catch}."
+        self.log_event(
+            f"GOT_AWAY | encounters={self.counter} catches={self.catch_counter} "
+            f"since_last_catch={self.encounters_since_last_catch} score={score:.3f}"
         )
 
     def record_gotcha(self, score: float) -> None:
@@ -395,11 +398,9 @@ class EncounterCounter:
         self.save_state()
         self.append_event_log("gotcha", score)
 
-        self.log(f"Matched gotcha.png with score {score:.3f}")
-        self.log(
-            f"Gotcha detected. Encounters={self.counter}, "
-            f"catches={self.catch_counter}, "
-            f"since_last_catch={self.encounters_since_last_catch}."
+        self.log_event(
+            f"GOTCHA | encounters={self.counter} catches={self.catch_counter} "
+            f"since_last_catch={self.encounters_since_last_catch} score={score:.3f}"
         )
 
     def handle_frame(self, gray_frame: np.ndarray) -> None:
@@ -409,19 +410,16 @@ class EncounterCounter:
         got_away_match = self.match_template(gray_frame, self.got_away_template, ESCAPE_THRESHOLD)
         gotcha_match = self.match_template(gray_frame, self.gotcha_template, GOTCHA_THRESHOLD)
 
-        should_log_preview = (
-            self.verbose_debug
-            and (
-                self.frame_index - self.last_match_log_frame >= MATCH_LOG_EVERY_N_FRAMES
-                or got_away_match.score >= PREVIEW_MATCH_THRESHOLD
-                or gotcha_match.score >= PREVIEW_MATCH_THRESHOLD
-            )
+        should_log_preview = self.verbose_debug and (
+            self.frame_index - self.last_match_log_frame >= MATCH_LOG_EVERY_N_FRAMES
+            or got_away_match.score >= PREVIEW_MATCH_THRESHOLD
+            or gotcha_match.score >= PREVIEW_MATCH_THRESHOLD
         )
 
         if should_log_preview:
             self.last_match_log_frame = self.frame_index
             cooldown_remaining = max(0.0, self.cooldown_until - time.time())
-            self.log(
+            self.log_debug(
                 "Match score: "
                 f"got_away={got_away_match.score:.3f} "
                 f"(found={got_away_match.found}), "
@@ -438,7 +436,7 @@ class EncounterCounter:
             if not got_away_match.found and not gotcha_match.found:
                 self.waiting_for_clear = False
                 self.save_state()
-                self.log("Battle result text cleared. Re-armed for next encounter.")
+                self.log_debug("Battle result text cleared. Re-armed for next encounter.")
             return
 
         if got_away_match.found and gotcha_match.found:
@@ -460,20 +458,20 @@ class EncounterCounter:
 
     def run(self) -> None:
         if self.debug_once:
-            self.log("Running single debug capture.")
-            self.log(f"Capture region: {self.capture_region}")
+            self.log_debug("Running single debug capture.")
+            self.log_debug(f"Capture region: {self.capture_region}")
             self.screenshot_region()
-            self.log(f"Saved debug frame to: {DEBUG_FRAME_FILE}")
+            self.log_debug(f"Saved debug frame to: {DEBUG_FRAME_FILE}")
             return
 
-        self.log("Starting Pokemon encounter counter.")
-        self.log(f"Current encounters: {self.counter}")
-        self.log(f"Current catches: {self.catch_counter}")
-        self.log(f"Capture region: {self.capture_region}")
-        self.log(f"CSV log: {ENCOUNTER_LOG_CSV_FILE}")
-        self.log(f"JSONL log: {EVENT_LOG_JSONL_FILE}")
-        self.log("Mode: got-away + gotcha")
-        self.log("Press Ctrl+C to stop. On Windows, Ctrl+Break also works.")
+        self.log_debug("Starting Pokemon encounter counter.")
+        self.log_debug(f"Current encounters: {self.counter}")
+        self.log_debug(f"Current catches: {self.catch_counter}")
+        self.log_debug(f"Capture region: {self.capture_region}")
+        self.log_debug(f"CSV log: {ENCOUNTER_LOG_CSV_FILE}")
+        self.log_debug(f"JSONL log: {EVENT_LOG_JSONL_FILE}")
+        self.log_debug("Mode: got-away + gotcha")
+        self.log_debug("Press Ctrl+C to stop. On Windows, Ctrl+Break also works.")
 
         while self.running:
             try:
@@ -483,17 +481,17 @@ class EncounterCounter:
             except KeyboardInterrupt:
                 self.stop()
             except Exception as exc:
-                self.log(f"[ERROR] {exc}")
+                self.log_error(f"[ERROR] {exc}")
                 time.sleep(1)
 
     def stop(self) -> None:
         self.running = False
         self.save_state()
-        self.log("State saved. Exiting.")
+        self.log_debug("State saved. Exiting.")
 
 
 def handle_shutdown(counter: EncounterCounter, signum, frame) -> None:  # type: ignore[no-untyped-def]
-    counter.log(f"Received signal {signum}. Shutting down.")
+    counter.log_debug(f"Received signal {signum}. Shutting down.")
     counter.stop()
     sys.exit(0)
 
@@ -654,9 +652,9 @@ def main() -> None:
         with SingleInstanceGuard(LOCK_FILE):
             counter = EncounterCounter(
                 capture_region=capture_region,
-                save_debug_frames=True,
+                save_debug_frames=args.debug or args.debug_once,
                 debug_once=args.debug_once,
-                verbose_debug=True,
+                verbose_debug=args.verbose_debug,
             )
             signal.signal(signal.SIGINT, lambda s, f: handle_shutdown(counter, s, f))
             signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown(counter, s, f))
