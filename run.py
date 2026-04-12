@@ -5,6 +5,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -31,6 +32,7 @@ CAPTURE_REGION = {
 BLACK_FRAME_WARNING_COOLDOWN_SECONDS = 1000.0
 SCAN_INTERVAL_SECONDS = 0.10
 ESCAPE_THRESHOLD = 0.85
+GOTCHA_THRESHOLD = 0.85
 POST_DETECTION_COOLDOWN_SECONDS = 5.0
 SAVE_DEBUG_FRAMES = True
 DEBUG_SAVE_EVERY_N_FRAMES = 1
@@ -80,9 +82,11 @@ class SingleInstanceGuard:
 
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             other_pid = self._read_existing_pid()
@@ -104,9 +108,11 @@ class SingleInstanceGuard:
             self.handle.seek(0)
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
         finally:
             self.handle.close()
@@ -134,7 +140,21 @@ class EncounterCounter:
         verbose_debug: bool = False,
     ) -> None:
         self.running = True
+
+        # Main counters
         self.counter = 0
+        self.catch_counter = 0
+
+        # Last-event state
+        self.last_event = "none"
+        self.last_event_at: Optional[str] = None
+        self.last_match_score = 0.0
+
+        # Catch-related state
+        self.last_catch_at_encounter = 0
+        self.encounters_since_last_catch = 0
+
+        # Capture/runtime state
         self.capture_region = dict(capture_region or CAPTURE_REGION)
         self.save_debug_frames = save_debug_frames
         self.debug_once = debug_once
@@ -149,9 +169,12 @@ class EncounterCounter:
         self.load_state()
         self.save_state()
 
-        self.escape_template: Optional[np.ndarray] = None
+        self.got_away_template: Optional[np.ndarray] = None
+        self.gotcha_template: Optional[np.ndarray] = None
+
         if not self.debug_once:
-            self.escape_template = self.load_template("got_away.png")
+            self.got_away_template = self.load_template("got_away.png")
+            self.gotcha_template = self.load_template("gotcha.png")
 
     def ensure_directories(self) -> None:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -181,10 +204,28 @@ class EncounterCounter:
         if STATE_FILE.exists():
             try:
                 data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+
+                self.counter = int(data.get("counter", self.counter))
+                self.catch_counter = int(data.get("catch_counter", 0))
                 self.cooldown_until = float(data.get("cooldown_until", 0.0))
                 self.waiting_for_clear = bool(data.get("waiting_for_clear", False))
+
+                self.last_event = str(data.get("last_event", "none"))
+                self.last_event_at = data.get("last_event_at")
+                self.last_match_score = float(data.get("last_match_score", 0.0))
+
+                self.last_catch_at_encounter = int(data.get("last_catch_at_encounter", 0))
+                self.encounters_since_last_catch = int(
+                    data.get("encounters_since_last_catch", 0)
+                )
+
             except (json.JSONDecodeError, ValueError, TypeError):
                 print("[WARN] state.json was invalid. Using defaults.")
+
+        if self.last_catch_at_encounter > 0:
+            self.encounters_since_last_catch = max(
+                0, self.counter - self.last_catch_at_encounter
+            )
 
     def save_state(self) -> None:
         COUNTER_FILE.write_text(str(self.counter), encoding="utf-8")
@@ -192,8 +233,14 @@ class EncounterCounter:
             json.dumps(
                 {
                     "counter": self.counter,
+                    "catch_counter": self.catch_counter,
                     "cooldown_until": self.cooldown_until,
                     "waiting_for_clear": self.waiting_for_clear,
+                    "last_event": self.last_event,
+                    "last_event_at": self.last_event_at,
+                    "last_match_score": self.last_match_score,
+                    "last_catch_at_encounter": self.last_catch_at_encounter,
+                    "encounters_since_last_catch": self.encounters_since_last_catch,
                     "capture_region": self.capture_region,
                 },
                 indent=2,
@@ -204,6 +251,9 @@ class EncounterCounter:
     def log(self, message: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
         print(f"[{timestamp}] {message}")
+
+    def now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     def screenshot_region(self) -> np.ndarray:
         with mss.mss() as sct:
@@ -254,22 +304,55 @@ class EncounterCounter:
         self.save_state()
         self.log(f"Cooldown started for {POST_DETECTION_COOLDOWN_SECONDS:.1f} seconds.")
 
-    def increment_counter(self) -> None:
+    def record_got_away(self, score: float) -> None:
         self.counter += 1
+        self.last_event = "got_away"
+        self.last_event_at = self.now_iso()
+        self.last_match_score = score
+
+        if self.last_catch_at_encounter > 0:
+            self.encounters_since_last_catch = self.counter - self.last_catch_at_encounter
+        else:
+            self.encounters_since_last_catch = self.counter
+
         self.save_state()
-        self.log(f"Got away detected. Counter is now {self.counter}.")
+        self.log(f"Matched got_away.png with score {score:.3f}")
+        self.log(
+            f"Got away detected. Encounters={self.counter}, "
+            f"catches={self.catch_counter}, "
+            f"since_last_catch={self.encounters_since_last_catch}."
+        )
+
+    def record_gotcha(self, score: float) -> None:
+        self.counter += 1
+        self.catch_counter += 1
+        self.last_catch_at_encounter = self.counter
+        self.encounters_since_last_catch = 0
+        self.last_event = "gotcha"
+        self.last_event_at = self.now_iso()
+        self.last_match_score = score
+
+        self.save_state()
+        self.log(f"Matched gotcha.png with score {score:.3f}")
+        self.log(
+            f"Gotcha detected. Encounters={self.counter}, "
+            f"catches={self.catch_counter}, "
+            f"since_last_catch={self.encounters_since_last_catch}."
+        )
 
     def handle_frame(self, gray_frame: np.ndarray) -> None:
-        if self.escape_template is None:
-            raise RuntimeError("Template is not loaded.")
+        if self.got_away_template is None or self.gotcha_template is None:
+            raise RuntimeError("Templates are not loaded.")
 
-        escape_match = self.match_template(gray_frame, self.escape_template, ESCAPE_THRESHOLD)
+        got_away_match = self.match_template(gray_frame, self.got_away_template, ESCAPE_THRESHOLD)
+        gotcha_match = self.match_template(gray_frame, self.gotcha_template, GOTCHA_THRESHOLD)
 
         should_log_preview = (
             self.verbose_debug
             and (
                 self.frame_index - self.last_match_log_frame >= MATCH_LOG_EVERY_N_FRAMES
-                or escape_match.score >= PREVIEW_MATCH_THRESHOLD
+                or got_away_match.score >= PREVIEW_MATCH_THRESHOLD
+                or gotcha_match.score >= PREVIEW_MATCH_THRESHOLD
             )
         )
 
@@ -278,8 +361,10 @@ class EncounterCounter:
             cooldown_remaining = max(0.0, self.cooldown_until - time.time())
             self.log(
                 "Match score: "
-                f"got_away={escape_match.score:.3f} "
-                f"(found={escape_match.found}), "
+                f"got_away={got_away_match.score:.3f} "
+                f"(found={got_away_match.found}), "
+                f"gotcha={gotcha_match.score:.3f} "
+                f"(found={gotcha_match.found}), "
                 f"cooldown_remaining={cooldown_remaining:.2f}s, "
                 f"waiting_for_clear={self.waiting_for_clear}"
             )
@@ -288,15 +373,27 @@ class EncounterCounter:
             return
 
         if self.waiting_for_clear:
-            if not escape_match.found:
+            if not got_away_match.found and not gotcha_match.found:
                 self.waiting_for_clear = False
                 self.save_state()
-                self.log("Got-away text cleared. Re-armed for next encounter.")
+                self.log("Battle result text cleared. Re-armed for next encounter.")
             return
 
-        if escape_match.found:
-            self.log(f"Matched got_away.png with score {escape_match.score:.3f}")
-            self.increment_counter()
+        if got_away_match.found and gotcha_match.found:
+            if gotcha_match.score >= got_away_match.score:
+                self.record_gotcha(gotcha_match.score)
+            else:
+                self.record_got_away(got_away_match.score)
+            self.start_cooldown()
+            return
+
+        if gotcha_match.found:
+            self.record_gotcha(gotcha_match.score)
+            self.start_cooldown()
+            return
+
+        if got_away_match.found:
+            self.record_got_away(got_away_match.score)
             self.start_cooldown()
 
     def run(self) -> None:
@@ -308,9 +405,10 @@ class EncounterCounter:
             return
 
         self.log("Starting Pokemon encounter counter.")
-        self.log(f"Current counter: {self.counter}")
+        self.log(f"Current encounters: {self.counter}")
+        self.log(f"Current catches: {self.catch_counter}")
         self.log(f"Capture region: {self.capture_region}")
-        self.log("Mode: got-away-only")
+        self.log("Mode: got-away + gotcha")
         self.log("Press Ctrl+C to stop. On Windows, Ctrl+Break also works.")
 
         while self.running:
@@ -444,7 +542,7 @@ def resolve_capture_region(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pokemon encounter counter (got-away-only)")
+    parser = argparse.ArgumentParser(description="Pokemon encounter counter (got-away + gotcha)")
     parser.add_argument("--debug", action="store_true", help="Continuously update output/last_capture.png while running.")
     parser.add_argument("--debug-once", action="store_true", help="Capture one frame to output/last_capture.png and exit.")
     parser.add_argument("--verbose-debug", action="store_true", help="Print detailed image stats for each capture.")
