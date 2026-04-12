@@ -23,9 +23,9 @@ DEBUG_FRAME_FILE = OUTPUT_DIR / "last_capture.png"
 
 CAPTURE_REGION = {
     "top": 1100,
-    "left": 250,
-    "width": 1390,
-    "height": 150,
+    "left": 282,
+    "width": 935,
+    "height": 132,
 }
 
 BLACK_FRAME_WARNING_COOLDOWN_SECONDS = 1000.0
