@@ -159,8 +159,10 @@ class EncounterCounter:
         save_debug_frames: bool = SAVE_DEBUG_FRAMES,
         debug_once: bool = False,
         verbose_debug: bool = False,
+        mode_name: str = "Random grass encounter",
     ) -> None:
         self.running = True
+        self.mode_name = mode_name
 
         self.counter = 0
         self.catch_counter = 0
@@ -283,6 +285,7 @@ class EncounterCounter:
                     "last_catch_at_encounter": self.last_catch_at_encounter,
                     "encounters_since_last_catch": self.encounters_since_last_catch,
                     "capture_region": self.capture_region,
+                    "mode_name": self.mode_name,
                 },
                 indent=2,
             ),
@@ -464,13 +467,12 @@ class EncounterCounter:
             self.log_debug(f"Saved debug frame to: {DEBUG_FRAME_FILE}")
             return
 
-        self.log_debug("Starting Pokemon encounter counter.")
+        self.log_debug(f"Mode: {self.mode_name}")
         self.log_debug(f"Current encounters: {self.counter}")
         self.log_debug(f"Current catches: {self.catch_counter}")
         self.log_debug(f"Capture region: {self.capture_region}")
         self.log_debug(f"CSV log: {ENCOUNTER_LOG_CSV_FILE}")
         self.log_debug(f"JSONL log: {EVENT_LOG_JSONL_FILE}")
-        self.log_debug("Mode: got-away + gotcha")
         self.log_debug("Press Ctrl+C to stop. On Windows, Ctrl+Break also works.")
 
         while self.running:
@@ -603,8 +605,72 @@ def resolve_capture_region(
         }
 
 
+def print_main_menu() -> None:
+    print()
+    print("=== Pokemon Counter Menu ===")
+    print("1) Random grass encounter")
+    print("2) Safari zone")
+    print("3) Soft reset")
+    print("4) Go back to screen settings (future plan)")
+    print("Q) Quit")
+    print()
+
+
+def select_main_menu_option() -> str:
+    while True:
+        print_main_menu()
+        choice = input("Select option: ").strip().lower()
+
+        match choice:
+            case "1" | "2" | "3" | "4" | "q" | "quit" | "exit":
+                return choice
+            case _:
+                print("Invalid selection. Try again.")
+
+
+def run_random_grass_mode(
+    *,
+    capture_region: dict[str, int],
+    args: argparse.Namespace,
+) -> None:
+    with SingleInstanceGuard(LOCK_FILE):
+        counter = EncounterCounter(
+            capture_region=capture_region,
+            save_debug_frames=args.debug or args.debug_once,
+            debug_once=args.debug_once,
+            verbose_debug=args.verbose_debug,
+            mode_name="Random grass encounter",
+        )
+        signal.signal(signal.SIGINT, lambda s, f: handle_shutdown(counter, s, f))
+        signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown(counter, s, f))
+        if hasattr(signal, "SIGBREAK"):
+            signal.signal(signal.SIGBREAK, lambda s, f: handle_shutdown(counter, s, f))
+        counter.run()
+
+
+def run_safari_zone_mode() -> None:
+    print()
+    print("[TODO] Safari zone mode is not implemented yet.")
+    print("Planned: custom Safari Zone result handling and counters.")
+    print()
+
+
+def run_soft_reset_mode() -> None:
+    print()
+    print("[TODO] Soft reset mode is not implemented yet.")
+    print("Planned: reset/session tracking flow.")
+    print()
+
+
+def run_screen_settings_menu() -> None:
+    print()
+    print("[TODO] Screen settings menu is not implemented yet.")
+    print("Planned: interactive capture-region setup from inside the script.")
+    print()
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pokemon encounter counter (got-away + gotcha)")
+    parser = argparse.ArgumentParser(description="Pokemon encounter counter")
     parser.add_argument("--debug", action="store_true", help="Continuously update output/last_capture.png while running.")
     parser.add_argument("--debug-once", action="store_true", help="Capture one frame to output/last_capture.png and exit.")
     parser.add_argument("--verbose-debug", action="store_true", help="Print detailed image stats for each capture.")
@@ -648,22 +714,34 @@ def main() -> None:
         print(f"[ERROR] {exc}")
         sys.exit(1)
 
-    try:
-        with SingleInstanceGuard(LOCK_FILE):
-            counter = EncounterCounter(
-                capture_region=capture_region,
-                save_debug_frames=args.debug or args.debug_once,
-                debug_once=args.debug_once,
-                verbose_debug=args.verbose_debug,
-            )
-            signal.signal(signal.SIGINT, lambda s, f: handle_shutdown(counter, s, f))
-            signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown(counter, s, f))
-            if hasattr(signal, "SIGBREAK"):
-                signal.signal(signal.SIGBREAK, lambda s, f: handle_shutdown(counter, s, f))
-            counter.run()
-    except RuntimeError as exc:
-        print(f"[ERROR] {exc}")
-        sys.exit(1)
+    while True:
+        choice = select_main_menu_option()
+
+        try:
+            match choice:
+                case "1":
+                    run_random_grass_mode(
+                        capture_region=capture_region,
+                        args=args,
+                    )
+                    return
+
+                case "2":
+                    run_safari_zone_mode()
+
+                case "3":
+                    run_soft_reset_mode()
+
+                case "4":
+                    run_screen_settings_menu()
+
+                case "q" | "quit" | "exit":
+                    print("Goodbye.")
+                    return
+
+        except RuntimeError as exc:
+            print(f"[ERROR] {exc}")
+            return
 
 
 if __name__ == "__main__":
