@@ -35,10 +35,10 @@ RANDOM_GRASS_CAPTURE_REGION = {
 }
 
 SAFARI_ZONE_CAPTURE_REGION = {
-    "top": 1060,
+    "top": 1068,
     "left": 282,
-    "width": 253,
-    "height": 132,
+    "width": 243,
+    "height": 114,
 }
 
 BLACK_FRAME_WARNING_COOLDOWN_SECONDS = 1000.0
@@ -62,6 +62,7 @@ EVENT_LOG_CSV_FIELDS = [
     "event",
     "counter",
     "catch_counter",
+    "encounter_increment",
     "last_event",
     "last_event_at",
     "last_match_score",
@@ -114,11 +115,9 @@ class SingleInstanceGuard:
 
             if os.name == "nt":
                 import msvcrt
-
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
-
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             other_pid = self._read_existing_pid()
@@ -140,11 +139,9 @@ class SingleInstanceGuard:
             self.handle.seek(0)
             if os.name == "nt":
                 import msvcrt
-
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
-
                 fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
         finally:
             self.handle.close()
@@ -177,9 +174,11 @@ class EncounterCounter:
         debug_once: bool = False,
         verbose_debug: bool = False,
         mode_name: str = MODE_RANDOM_GRASS,
+        encounter_increment: int = 1,
     ) -> None:
         self.running = True
         self.mode_name = mode_name
+        self.encounter_increment = max(1, int(encounter_increment))
 
         self.counter = 0
         self.catch_counter = 0
@@ -303,6 +302,7 @@ class EncounterCounter:
                 {
                     "counter": self.counter,
                     "catch_counter": self.catch_counter,
+                    "encounter_increment": self.encounter_increment,
                     "cooldown_until": self.cooldown_until,
                     "waiting_for_clear": self.waiting_for_clear,
                     "last_event": self.last_event,
@@ -327,6 +327,7 @@ class EncounterCounter:
             "event": event_name,
             "counter": self.counter,
             "catch_counter": self.catch_counter,
+            "encounter_increment": self.encounter_increment,
             "last_event": self.last_event,
             "last_event_at": self.last_event_at or "",
             "last_match_score": round(float(score), 6),
@@ -397,7 +398,7 @@ class EncounterCounter:
         self.log_debug(f"Cooldown started for {POST_DETECTION_COOLDOWN_SECONDS:.1f} seconds.")
 
     def record_got_away(self, score: float) -> None:
-        self.counter += 1
+        self.counter += self.encounter_increment
         self.last_event = "got_away"
         self.last_event_at = self.now_iso()
         self.last_match_score = score
@@ -411,12 +412,13 @@ class EncounterCounter:
         self.append_event_log("got_away", score)
 
         self.log_event(
-            f"GOT_AWAY | encounters={self.counter} catches={self.catch_counter} "
+            f"GOT_AWAY | +{self.encounter_increment} encounters={self.counter} "
+            f"catches={self.catch_counter} "
             f"since_last_catch={self.encounters_since_last_catch} score={score:.3f}"
         )
 
     def record_gotcha(self, score: float) -> None:
-        self.counter += 1
+        self.counter += self.encounter_increment
         self.catch_counter += 1
         self.last_catch_at_encounter = self.counter
         self.encounters_since_last_catch = 0
@@ -428,12 +430,12 @@ class EncounterCounter:
         self.append_event_log("gotcha", score)
 
         self.log_event(
-            f"GOTCHA | encounters={self.counter} catches={self.catch_counter} "
-            f"since_last_catch={self.encounters_since_last_catch} score={score:.3f}"
+            f"GOTCHA | +{self.encounter_increment} encounters={self.counter} "
+            f"catches={self.catch_counter} score={score:.3f}"
         )
 
     def record_wild(self, score: float) -> None:
-        self.counter += 1
+        self.counter += self.encounter_increment
         self.last_event = "wild"
         self.last_event_at = self.now_iso()
         self.last_match_score = score
@@ -446,7 +448,9 @@ class EncounterCounter:
         self.save_state()
         self.append_event_log("wild", score)
 
-        self.log_event(f"WILD | encounters={self.counter} score={score:.3f}")
+        self.log_event(
+            f"WILD | +{self.encounter_increment} encounters={self.counter} score={score:.3f}"
+        )
 
     def handle_random_grass_frame(self, gray_frame: np.ndarray) -> None:
         if self.got_away_template is None or self.gotcha_template is None:
@@ -554,6 +558,7 @@ class EncounterCounter:
             return
 
         self.log_debug(f"Mode: {self.mode_name}")
+        self.log_debug(f"Encounter increment: {self.encounter_increment}")
         self.log_debug(f"Current encounters: {self.counter}")
         self.log_debug(f"Current catches: {self.catch_counter}")
         self.log_debug(f"Capture region: {self.capture_region}")
@@ -703,16 +708,34 @@ def print_main_menu() -> None:
     print()
 
 
+def ask_encounter_increment() -> int:
+    while True:
+        raw_value = input("How many encounters should each detection add? [default 1]: ").strip()
+        if raw_value == "":
+            return 1
+
+        try:
+            value = int(raw_value)
+        except ValueError:
+            print("Please enter a whole number, like 1, 2, 3 or 4.")
+            continue
+
+        if value < 1:
+            print("Encounter increment must be at least 1.")
+            continue
+
+        return value
+
+
 def select_main_menu_option() -> str:
     while True:
         print_main_menu()
         choice = input("Select option: ").strip().lower()
 
-        match choice:
-            case "1" | "2" | "3" | "4" | "q" | "quit" | "exit":
-                return choice
-            case _:
-                print("Invalid selection. Try again.")
+        if choice in ("1", "2", "3", "4", "q", "quit", "exit"):
+            return choice
+
+        print("Invalid selection. Try again.")
 
 
 def configure_signal_handlers(counter: EncounterCounter) -> None:
@@ -725,6 +748,7 @@ def configure_signal_handlers(counter: EncounterCounter) -> None:
 def run_random_grass_mode(
     *,
     args: argparse.Namespace,
+    encounter_increment: int,
 ) -> None:
     capture_region = resolve_capture_region(
         args.monitor,
@@ -740,6 +764,7 @@ def run_random_grass_mode(
             debug_once=args.debug_once,
             verbose_debug=args.verbose_debug,
             mode_name=MODE_RANDOM_GRASS,
+            encounter_increment=encounter_increment,
         )
         configure_signal_handlers(counter)
         counter.run()
@@ -748,6 +773,7 @@ def run_random_grass_mode(
 def run_safari_zone_mode(
     *,
     args: argparse.Namespace,
+    encounter_increment: int,
 ) -> None:
     capture_region = resolve_capture_region(
         args.monitor,
@@ -763,6 +789,7 @@ def run_safari_zone_mode(
             debug_once=args.debug_once,
             verbose_debug=args.verbose_debug,
             mode_name=MODE_SAFARI_ZONE,
+            encounter_increment=encounter_increment,
         )
         configure_signal_handlers(counter)
         counter.run()
@@ -825,28 +852,37 @@ def main() -> None:
         print(f"[ERROR] {exc}")
         sys.exit(1)
 
+    encounter_increment = ask_encounter_increment()
+
     while True:
         choice = select_main_menu_option()
 
         try:
-            match choice:
-                case "1":
-                    run_random_grass_mode(args=args)
-                    return
+            if choice == "1":
+                run_random_grass_mode(
+                    args=args,
+                    encounter_increment=encounter_increment,
+                )
+                return
 
-                case "2":
-                    run_safari_zone_mode(args=args)
-                    return
+            if choice == "2":
+                run_safari_zone_mode(
+                    args=args,
+                    encounter_increment=encounter_increment,
+                )
+                return
 
-                case "3":
-                    run_soft_reset_mode()
+            if choice == "3":
+                run_soft_reset_mode()
+                continue
 
-                case "4":
-                    run_screen_settings_menu()
+            if choice == "4":
+                run_screen_settings_menu()
+                continue
 
-                case "q" | "quit" | "exit":
-                    print("Goodbye.")
-                    return
+            if choice in ("q", "quit", "exit"):
+                print("Goodbye.")
+                return
 
         except RuntimeError as exc:
             print(f"[ERROR] {exc}")
