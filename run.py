@@ -27,10 +27,17 @@ DEBUG_FRAME_FILE = OUTPUT_DIR / "last_capture.png"
 ENCOUNTER_LOG_CSV_FILE = OUTPUT_DIR / "encounter_log.csv"
 EVENT_LOG_JSONL_FILE = OUTPUT_DIR / "event_log.jsonl"
 
-CAPTURE_REGION = {
+RANDOM_GRASS_CAPTURE_REGION = {
     "top": 1060,
     "left": 282,
     "width": 935,
+    "height": 132,
+}
+
+SAFARI_ZONE_CAPTURE_REGION = {
+    "top": 1060,
+    "left": 282,
+    "width": 253,
     "height": 132,
 }
 
@@ -38,6 +45,7 @@ BLACK_FRAME_WARNING_COOLDOWN_SECONDS = 1000.0
 SCAN_INTERVAL_SECONDS = 0.10
 ESCAPE_THRESHOLD = 0.85
 GOTCHA_THRESHOLD = 0.85
+WILD_THRESHOLD = 0.85
 POST_DETECTION_COOLDOWN_SECONDS = 5.0
 SAVE_DEBUG_FRAMES = False
 DEBUG_SAVE_EVERY_N_FRAMES = 1
@@ -45,6 +53,9 @@ MATCH_LOG_EVERY_N_FRAMES = 5
 PREVIEW_MATCH_THRESHOLD = 0.60
 NEAR_BLACK_MEAN_THRESHOLD = 5.0
 NEAR_BLACK_MAX_THRESHOLD = 20
+
+MODE_RANDOM_GRASS = "Random grass encounter"
+MODE_SAFARI_ZONE = "Safari zone"
 
 EVENT_LOG_CSV_FIELDS = [
     "timestamp",
@@ -151,6 +162,12 @@ class SingleInstanceGuard:
         return pid or None
 
 
+def get_default_capture_region(mode_name: str) -> dict[str, int]:
+    if mode_name == MODE_SAFARI_ZONE:
+        return dict(SAFARI_ZONE_CAPTURE_REGION)
+    return dict(RANDOM_GRASS_CAPTURE_REGION)
+
+
 class EncounterCounter:
     def __init__(
         self,
@@ -159,7 +176,7 @@ class EncounterCounter:
         save_debug_frames: bool = SAVE_DEBUG_FRAMES,
         debug_once: bool = False,
         verbose_debug: bool = False,
-        mode_name: str = "Random grass encounter",
+        mode_name: str = MODE_RANDOM_GRASS,
     ) -> None:
         self.running = True
         self.mode_name = mode_name
@@ -174,7 +191,7 @@ class EncounterCounter:
         self.last_catch_at_encounter = 0
         self.encounters_since_last_catch = 0
 
-        self.capture_region = dict(capture_region or CAPTURE_REGION)
+        self.capture_region = dict(capture_region or get_default_capture_region(mode_name))
         self.save_debug_frames = save_debug_frames
         self.debug_once = debug_once
         self.verbose_debug = verbose_debug
@@ -184,17 +201,17 @@ class EncounterCounter:
         self.cooldown_until = 0.0
         self.waiting_for_clear = False
 
+        self.got_away_template: Optional[np.ndarray] = None
+        self.gotcha_template: Optional[np.ndarray] = None
+        self.wild_template: Optional[np.ndarray] = None
+
         self.ensure_directories()
         self.ensure_log_files()
         self.load_state()
         self.save_state()
 
-        self.got_away_template: Optional[np.ndarray] = None
-        self.gotcha_template: Optional[np.ndarray] = None
-
         if not self.debug_once:
-            self.got_away_template = self.load_template("got_away.png")
-            self.gotcha_template = self.load_template("gotcha.png")
+            self.load_mode_templates()
 
     def ensure_directories(self) -> None:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -235,6 +252,15 @@ class EncounterCounter:
             self.log_error(f"[ERROR] Failed to load template: {path}")
             sys.exit(1)
         return template
+
+    def load_mode_templates(self) -> None:
+        if self.mode_name == MODE_RANDOM_GRASS:
+            self.got_away_template = self.load_template("got_away.png")
+            self.gotcha_template = self.load_template("gotcha.png")
+        elif self.mode_name == MODE_SAFARI_ZONE:
+            self.wild_template = self.load_template("wild.png")
+        else:
+            raise RuntimeError(f"Unsupported mode: {self.mode_name}")
 
     def load_state(self) -> None:
         if COUNTER_FILE.exists():
@@ -406,9 +432,25 @@ class EncounterCounter:
             f"since_last_catch={self.encounters_since_last_catch} score={score:.3f}"
         )
 
-    def handle_frame(self, gray_frame: np.ndarray) -> None:
+    def record_wild(self, score: float) -> None:
+        self.counter += 1
+        self.last_event = "wild"
+        self.last_event_at = self.now_iso()
+        self.last_match_score = score
+
+        if self.last_catch_at_encounter > 0:
+            self.encounters_since_last_catch = self.counter - self.last_catch_at_encounter
+        else:
+            self.encounters_since_last_catch = self.counter
+
+        self.save_state()
+        self.append_event_log("wild", score)
+
+        self.log_event(f"WILD | encounters={self.counter} score={score:.3f}")
+
+    def handle_random_grass_frame(self, gray_frame: np.ndarray) -> None:
         if self.got_away_template is None or self.gotcha_template is None:
-            raise RuntimeError("Templates are not loaded.")
+            raise RuntimeError("Random grass templates are not loaded.")
 
         got_away_match = self.match_template(gray_frame, self.got_away_template, ESCAPE_THRESHOLD)
         gotcha_match = self.match_template(gray_frame, self.gotcha_template, GOTCHA_THRESHOLD)
@@ -458,6 +500,50 @@ class EncounterCounter:
         if got_away_match.found:
             self.record_got_away(got_away_match.score)
             self.start_cooldown()
+
+    def handle_safari_zone_frame(self, gray_frame: np.ndarray) -> None:
+        if self.wild_template is None:
+            raise RuntimeError("Safari Zone template is not loaded.")
+
+        wild_match = self.match_template(gray_frame, self.wild_template, WILD_THRESHOLD)
+
+        should_log_preview = self.verbose_debug and (
+            self.frame_index - self.last_match_log_frame >= MATCH_LOG_EVERY_N_FRAMES
+            or wild_match.score >= PREVIEW_MATCH_THRESHOLD
+        )
+
+        if should_log_preview:
+            self.last_match_log_frame = self.frame_index
+            cooldown_remaining = max(0.0, self.cooldown_until - time.time())
+            self.log_debug(
+                "Match score: "
+                f"wild={wild_match.score:.3f} "
+                f"(found={wild_match.found}), "
+                f"cooldown_remaining={cooldown_remaining:.2f}s, "
+                f"waiting_for_clear={self.waiting_for_clear}"
+            )
+
+        if self.in_cooldown():
+            return
+
+        if self.waiting_for_clear:
+            if not wild_match.found:
+                self.waiting_for_clear = False
+                self.save_state()
+                self.log_debug("Wild text cleared. Re-armed for next Safari encounter.")
+            return
+
+        if wild_match.found:
+            self.record_wild(wild_match.score)
+            self.start_cooldown()
+
+    def handle_frame(self, gray_frame: np.ndarray) -> None:
+        if self.mode_name == MODE_RANDOM_GRASS:
+            self.handle_random_grass_frame(gray_frame)
+        elif self.mode_name == MODE_SAFARI_ZONE:
+            self.handle_safari_zone_frame(gray_frame)
+        else:
+            raise RuntimeError(f"Unsupported mode: {self.mode_name}")
 
     def run(self) -> None:
         if self.debug_once:
@@ -564,6 +650,7 @@ def resolve_capture_region(
     monitor_index: Optional[int],
     region_values: Optional[list[int]],
     monitor_region_values: Optional[list[int]],
+    default_region: Optional[dict[str, int]] = None,
 ) -> dict[str, int]:
     if monitor_region_values is not None:
         monitor_idx, left, top, width, height = monitor_region_values
@@ -589,7 +676,7 @@ def resolve_capture_region(
         return {"left": left, "top": top, "width": width, "height": height}
 
     if monitor_index is None:
-        return dict(CAPTURE_REGION)
+        return dict(default_region or RANDOM_GRASS_CAPTURE_REGION)
 
     with mss.mss() as sct:
         if monitor_index < 1 or monitor_index >= len(sct.monitors):
@@ -628,31 +715,57 @@ def select_main_menu_option() -> str:
                 print("Invalid selection. Try again.")
 
 
+def configure_signal_handlers(counter: EncounterCounter) -> None:
+    signal.signal(signal.SIGINT, lambda s, f: handle_shutdown(counter, s, f))
+    signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown(counter, s, f))
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, lambda s, f: handle_shutdown(counter, s, f))
+
+
 def run_random_grass_mode(
     *,
-    capture_region: dict[str, int],
     args: argparse.Namespace,
 ) -> None:
+    capture_region = resolve_capture_region(
+        args.monitor,
+        args.region,
+        args.monitor_region,
+        default_region=RANDOM_GRASS_CAPTURE_REGION,
+    )
+
     with SingleInstanceGuard(LOCK_FILE):
         counter = EncounterCounter(
             capture_region=capture_region,
             save_debug_frames=args.debug or args.debug_once,
             debug_once=args.debug_once,
             verbose_debug=args.verbose_debug,
-            mode_name="Random grass encounter",
+            mode_name=MODE_RANDOM_GRASS,
         )
-        signal.signal(signal.SIGINT, lambda s, f: handle_shutdown(counter, s, f))
-        signal.signal(signal.SIGTERM, lambda s, f: handle_shutdown(counter, s, f))
-        if hasattr(signal, "SIGBREAK"):
-            signal.signal(signal.SIGBREAK, lambda s, f: handle_shutdown(counter, s, f))
+        configure_signal_handlers(counter)
         counter.run()
 
 
-def run_safari_zone_mode() -> None:
-    print()
-    print("[TODO] Safari zone mode is not implemented yet.")
-    print("Planned: custom Safari Zone result handling and counters.")
-    print()
+def run_safari_zone_mode(
+    *,
+    args: argparse.Namespace,
+) -> None:
+    capture_region = resolve_capture_region(
+        args.monitor,
+        args.region,
+        args.monitor_region,
+        default_region=SAFARI_ZONE_CAPTURE_REGION,
+    )
+
+    with SingleInstanceGuard(LOCK_FILE):
+        counter = EncounterCounter(
+            capture_region=capture_region,
+            save_debug_frames=args.debug or args.debug_once,
+            debug_once=args.debug_once,
+            verbose_debug=args.verbose_debug,
+            mode_name=MODE_SAFARI_ZONE,
+        )
+        configure_signal_handlers(counter)
+        counter.run()
 
 
 def run_soft_reset_mode() -> None:
@@ -708,8 +821,6 @@ def main() -> None:
         if args.save_monitor is not None:
             save_monitor(args.save_monitor)
             return
-
-        capture_region = resolve_capture_region(args.monitor, args.region, args.monitor_region)
     except ValueError as exc:
         print(f"[ERROR] {exc}")
         sys.exit(1)
@@ -720,14 +831,12 @@ def main() -> None:
         try:
             match choice:
                 case "1":
-                    run_random_grass_mode(
-                        capture_region=capture_region,
-                        args=args,
-                    )
+                    run_random_grass_mode(args=args)
                     return
 
                 case "2":
-                    run_safari_zone_mode()
+                    run_safari_zone_mode(args=args)
+                    return
 
                 case "3":
                     run_soft_reset_mode()
@@ -740,6 +849,9 @@ def main() -> None:
                     return
 
         except RuntimeError as exc:
+            print(f"[ERROR] {exc}")
+            return
+        except ValueError as exc:
             print(f"[ERROR] {exc}")
             return
 
