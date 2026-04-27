@@ -41,11 +41,19 @@ SAFARI_ZONE_CAPTURE_REGION = {
     "height": 114,
 }
 
+EGG_MODE_CAPTURE_REGION = {
+    "top": 1040,
+    "left": 260,
+    "width": 420,
+    "height": 120,
+}
+
 BLACK_FRAME_WARNING_COOLDOWN_SECONDS = 1000.0
 SCAN_INTERVAL_SECONDS = 0.10
 ESCAPE_THRESHOLD = 0.85
 GOTCHA_THRESHOLD = 0.85
 WILD_THRESHOLD = 0.85
+HUH_THRESHOLD = 0.85
 POST_DETECTION_COOLDOWN_SECONDS = 5.0
 SAVE_DEBUG_FRAMES = False
 DEBUG_SAVE_EVERY_N_FRAMES = 1
@@ -56,6 +64,7 @@ NEAR_BLACK_MAX_THRESHOLD = 20
 
 MODE_RANDOM_GRASS = "Random grass encounter"
 MODE_SAFARI_ZONE = "Safari zone"
+MODE_EGG = "Egg mode"
 
 EVENT_LOG_CSV_FIELDS = [
     "timestamp",
@@ -162,6 +171,8 @@ class SingleInstanceGuard:
 def get_default_capture_region(mode_name: str) -> dict[str, int]:
     if mode_name == MODE_SAFARI_ZONE:
         return dict(SAFARI_ZONE_CAPTURE_REGION)
+    if mode_name == MODE_EGG:
+        return dict(EGG_MODE_CAPTURE_REGION)
     return dict(RANDOM_GRASS_CAPTURE_REGION)
 
 
@@ -203,6 +214,7 @@ class EncounterCounter:
         self.got_away_template: Optional[np.ndarray] = None
         self.gotcha_template: Optional[np.ndarray] = None
         self.wild_template: Optional[np.ndarray] = None
+        self.huh_template: Optional[np.ndarray] = None
 
         self.ensure_directories()
         self.ensure_log_files()
@@ -258,6 +270,8 @@ class EncounterCounter:
             self.gotcha_template = self.load_template("gotcha.png")
         elif self.mode_name == MODE_SAFARI_ZONE:
             self.wild_template = self.load_template("wild.png")
+        elif self.mode_name == MODE_EGG:
+            self.huh_template = self.load_template("huh.png")
         else:
             raise RuntimeError(f"Unsupported mode: {self.mode_name}")
 
@@ -452,6 +466,24 @@ class EncounterCounter:
             f"WILD | +{self.encounter_increment} encounters={self.counter} score={score:.3f}"
         )
 
+    def record_huh(self, score: float) -> None:
+        self.counter += self.encounter_increment
+        self.last_event = "huh"
+        self.last_event_at = self.now_iso()
+        self.last_match_score = score
+
+        if self.last_catch_at_encounter > 0:
+            self.encounters_since_last_catch = self.counter - self.last_catch_at_encounter
+        else:
+            self.encounters_since_last_catch = self.counter
+
+        self.save_state()
+        self.append_event_log("huh", score)
+
+        self.log_event(
+            f"HUH | +{self.encounter_increment} encounters={self.counter} score={score:.3f}"
+        )
+
     def handle_random_grass_frame(self, gray_frame: np.ndarray) -> None:
         if self.got_away_template is None or self.gotcha_template is None:
             raise RuntimeError("Random grass templates are not loaded.")
@@ -541,11 +573,49 @@ class EncounterCounter:
             self.record_wild(wild_match.score)
             self.start_cooldown()
 
+    def handle_egg_frame(self, gray_frame: np.ndarray) -> None:
+        if self.huh_template is None:
+            raise RuntimeError("Egg template is not loaded.")
+
+        huh_match = self.match_template(gray_frame, self.huh_template, HUH_THRESHOLD)
+
+        should_log_preview = self.verbose_debug and (
+            self.frame_index - self.last_match_log_frame >= MATCH_LOG_EVERY_N_FRAMES
+            or huh_match.score >= PREVIEW_MATCH_THRESHOLD
+        )
+
+        if should_log_preview:
+            self.last_match_log_frame = self.frame_index
+            cooldown_remaining = max(0.0, self.cooldown_until - time.time())
+            self.log_debug(
+                "Match score: "
+                f"huh={huh_match.score:.3f} "
+                f"(found={huh_match.found}), "
+                f"cooldown_remaining={cooldown_remaining:.2f}s, "
+                f"waiting_for_clear={self.waiting_for_clear}"
+            )
+
+        if self.in_cooldown():
+            return
+
+        if self.waiting_for_clear:
+            if not huh_match.found:
+                self.waiting_for_clear = False
+                self.save_state()
+                self.log_debug("Huh text cleared. Re-armed for next egg encounter.")
+            return
+
+        if huh_match.found:
+            self.record_huh(huh_match.score)
+            self.start_cooldown()
+
     def handle_frame(self, gray_frame: np.ndarray) -> None:
         if self.mode_name == MODE_RANDOM_GRASS:
             self.handle_random_grass_frame(gray_frame)
         elif self.mode_name == MODE_SAFARI_ZONE:
             self.handle_safari_zone_frame(gray_frame)
+        elif self.mode_name == MODE_EGG:
+            self.handle_egg_frame(gray_frame)
         else:
             raise RuntimeError(f"Unsupported mode: {self.mode_name}")
 
@@ -702,8 +772,9 @@ def print_main_menu() -> None:
     print("=== Pokemon Counter Menu ===")
     print("1) Random grass encounter")
     print("2) Safari zone")
-    print("3) Soft reset")
-    print("4) Go back to screen settings (future plan)")
+    print("3) Egg mode")
+    print("4) Soft reset")
+    print("5) Go back to screen settings (future plan)")
     print("Q) Quit")
     print()
 
@@ -732,7 +803,7 @@ def select_main_menu_option() -> str:
         print_main_menu()
         choice = input("Select option: ").strip().lower()
 
-        if choice in ("1", "2", "3", "4", "q", "quit", "exit"):
+        if choice in ("1", "2", "3", "4", "5", "q", "quit", "exit"):
             return choice
 
         print("Invalid selection. Try again.")
@@ -789,6 +860,31 @@ def run_safari_zone_mode(
             debug_once=args.debug_once,
             verbose_debug=args.verbose_debug,
             mode_name=MODE_SAFARI_ZONE,
+            encounter_increment=encounter_increment,
+        )
+        configure_signal_handlers(counter)
+        counter.run()
+
+
+def run_egg_mode(
+    *,
+    args: argparse.Namespace,
+    encounter_increment: int,
+) -> None:
+    capture_region = resolve_capture_region(
+        args.monitor,
+        args.region,
+        args.monitor_region,
+        default_region=EGG_MODE_CAPTURE_REGION,
+    )
+
+    with SingleInstanceGuard(LOCK_FILE):
+        counter = EncounterCounter(
+            capture_region=capture_region,
+            save_debug_frames=args.debug or args.debug_once,
+            debug_once=args.debug_once,
+            verbose_debug=args.verbose_debug,
+            mode_name=MODE_EGG,
             encounter_increment=encounter_increment,
         )
         configure_signal_handlers(counter)
@@ -873,10 +969,17 @@ def main() -> None:
                 return
 
             if choice == "3":
+                run_egg_mode(
+                    args=args,
+                    encounter_increment=encounter_increment,
+                )
+                return
+
+            if choice == "4":
                 run_soft_reset_mode()
                 continue
 
-            if choice == "4":
+            if choice == "5":
                 run_screen_settings_menu()
                 continue
 
