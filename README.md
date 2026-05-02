@@ -1,4 +1,4 @@
-# Auto Encounter Counter Pokemon
+# Pokemon Auto Encounter Counter 
 
 **Alpha release**
 
