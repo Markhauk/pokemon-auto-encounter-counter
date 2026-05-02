@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "last_selected_mode": "random_grass",
+  "encounter_increment": 1,
+  "debug": {
+    "save_debug_frames": false,
+    "verbose_debug": false
+  },
+  "modes": {
+    "random_grass": {
+      "capture_region": {
+        "top": 1060,
+        "left": 282,
+        "width": 935,
+        "height": 132
+      }
+    },
+    "safari_zone": {
+      "capture_region": {
+        "top": 1068,
+        "left": 282,
+        "width": 243,
+        "height": 114
+      }
+    },
+    "egg_mode": {
+      "capture_region": {
+        "top": 1040,
+        "left": 260,
+        "width": 420,
+        "height": 120
+      }
+    },
+    "soft_reset": {
+      "capture_region": {
+        "top": 0,
+        "left": 0,
+        "width": 0,
+        "height": 0
+      }
+    }
+  }
+}

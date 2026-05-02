@@ -1,50 +1,60 @@
-# Auto Encounter Counter Pokémon
+# Auto Encounter Counter Pokemon
 
-A local screen-monitoring utility that uses OpenCV template matching to count Pokémon battle results from on-screen text.
+A local-first Pokemon encounter counter built in Python. The project now has a reusable detection engine, a retained terminal workflow, and a PySide6 desktop GUI for day-to-day use on Windows.
 
-## Features
+## What it supports
 
-- Template matching with `OpenCV`
-- Counts encounters from `got_away.png`
-- Counts catches from `gotcha.png`
-- Saves persistent state to `output/state.json`
-- Saves encounter count to `output/counter.txt`
-- Writes a CSV event log to `output/encounter_log.csv`
-- Writes a JSONL event log to `output/event_log.jsonl`
-- Prevents duplicate launches with a lock file
-- Supports custom monitor and region selection
-- Debug capture tools for tuning the detection area
+- Random grass encounter mode via `got_away.png` and `gotcha.png`
+- Safari zone mode via `wild.png`
+- Egg mode wiring via `huh.png`
+- Local state in `output/state.json` and `output/counter.txt`
+- Local event logs in `output/encounter_log.csv` and `output/event_log.jsonl`
+- Last debug capture output in `output/last_capture.png`
+- Per-mode capture region settings in `config.json`
+- Single-instance protection while scanning
 
----
-
-## How it works
-
-The script repeatedly captures a defined screen region and compares it against two grayscale template images:
-
-- `templates/got_away.png`
-- `templates/gotcha.png`
-
-When a template match passes the configured threshold:
-
-- `got_away` increases the encounter counter
-- `gotcha` increases both the encounter counter and the catch counter
-
-A cooldown is applied after detection so the same result text is not counted multiple times while it stays visible on screen.
-
----
-
-## Project structure
+## Application structure
 
 ```text
 Auto-Encounter-Counter-Pokemon/
-├─ run.py
-├─ templates/
-│  ├─ got_away.png
-│  └─ gotcha.png
-└─ output/
-   ├─ counter.txt
-   ├─ state.json
-   ├─ encounter_log.csv
-   ├─ event_log.jsonl
-   ├─ last_capture.png
-   └─ encounter_counter.lock
+|-- app/
+|   |-- core/        # detection, capture, templates, persistence
+|   |-- services/    # config, controller, worker thread
+|   `-- gui/         # PySide6 desktop UI
+|-- config.json
+|-- run.py           # terminal entrypoint over the shared core
+|-- templates/
+`-- output/
+```
+
+## Run the GUI
+
+```powershell
+python -m app.main
+```
+
+Once launched, use:
+
+1. `Dashboard` to pick a mode, set encounter increment, and start or stop scanning.
+2. `Capture Settings` to edit per-mode screen regions and test screenshots.
+3. `Templates` to verify required template files.
+4. `Logs / State` to inspect the local files the engine writes.
+
+## Run the CLI
+
+```powershell
+python run.py
+```
+
+The CLI still supports:
+
+- monitor listing
+- monitor screenshots
+- explicit capture region overrides
+- debug capture mode
+
+## Notes
+
+- The GUI and CLI both reuse the same detection engine and output files.
+- `Soft reset` is present in the UI as a future mode, but is intentionally disabled in v1.
+- `Egg mode` requires `templates/huh.png`. If that file is missing, the Templates tab and runtime error handling will surface it clearly.
