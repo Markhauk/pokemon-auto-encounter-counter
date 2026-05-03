@@ -1,4 +1,4 @@
-# Auto Encounter Counter Pokemon
+# Pokemon Auto Encounter Counter 
 
 **Alpha release**
 
@@ -177,7 +177,7 @@ Dependencies:
 From the project root in **Windows PowerShell**:
 
 ```powershell
-cd "C:\Users\Marku\dev\Auto-Encounter-Counter-Pokemon"
+cd <repo-root>
 uv sync
 ```
 
@@ -188,7 +188,7 @@ This installs the dependencies into the local virtual environment.
 From the project root in **Windows PowerShell**:
 
 ```powershell
-cd "C:\Users\Marku\dev\Auto-Encounter-Counter-Pokemon"
+cd <repo-root>
 .\.venv\Scripts\python -m app.main
 ```
 
@@ -199,7 +199,7 @@ The terminal version still exists and now uses the shared core engine.
 From the project root:
 
 ```powershell
-cd "C:\Users\Marku\dev\Auto-Encounter-Counter-Pokemon"
+cd <repo-root>
 .\.venv\Scripts\python run.py
 ```
 
