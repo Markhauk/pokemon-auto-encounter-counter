@@ -183,6 +183,27 @@ uv sync
 
 This installs the dependencies into the local virtual environment.
 
+## Quick Start
+
+1. Open **Windows PowerShell**.
+2. Go to the project folder:
+
+```powershell
+cd <repo-root>
+```
+
+3. Install dependencies:
+
+```powershell
+uv sync
+```
+
+4. Launch the desktop app:
+
+```powershell
+.\.venv\Scripts\python -m app.main
+```
+
 ## Run the Desktop App
 
 From the project root in **Windows PowerShell**:
