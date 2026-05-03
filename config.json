@@ -1,40 +1,73 @@
 {
-  "version": 1,
+  "version": 3,
   "last_selected_mode": "random_grass",
   "encounter_increment": 1,
   "debug": {
     "save_debug_frames": false,
     "verbose_debug": false
   },
+  "display_setup": {
+    "screen_count": 3,
+    "resolution_preset": "1440p",
+    "mixed_resolutions": false,
+    "layout": [
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        1,
+        1,
+        0
+      ]
+    ],
+    "capture_cell": {
+      "row": 1,
+      "column": 1
+    },
+    "monitor_resolutions": [
+      [
+        "1440p",
+        "1440p",
+        "1440p"
+      ],
+      [
+        "1440p",
+        "1440p",
+        "1440p"
+      ]
+    ]
+  },
   "modes": {
     "random_grass": {
       "capture_region": {
-        "top": 1060,
         "left": 282,
+        "top": 1060,
         "width": 935,
         "height": 132
       }
     },
     "safari_zone": {
       "capture_region": {
-        "top": 1068,
         "left": 282,
+        "top": 1068,
         "width": 243,
         "height": 114
       }
     },
     "egg_mode": {
       "capture_region": {
-        "top": 1040,
         "left": 260,
+        "top": 1040,
         "width": 420,
         "height": 120
       }
     },
     "soft_reset": {
       "capture_region": {
-        "top": 0,
         "left": 0,
+        "top": 0,
         "width": 0,
         "height": 0
       }

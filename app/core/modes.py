@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .display import DEFAULT_RESOLUTION_PRESET, scale_region_for_resolution
+
 
 MODE_RANDOM_GRASS_KEY = "random_grass"
 MODE_SAFARI_ZONE_KEY = "safari_zone"
@@ -95,5 +97,13 @@ def get_mode(mode_key_or_name: str) -> ModeDefinition:
     raise ValueError(f"Unknown mode '{mode_key_or_name}'. Expected one of: {valid_modes}")
 
 
-def get_default_capture_region(mode_key_or_name: str) -> dict[str, int]:
-    return dict(get_mode(mode_key_or_name).default_capture_region)
+def get_default_capture_region(
+    mode_key_or_name: str,
+    *,
+    resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
+) -> dict[str, int]:
+    return scale_region_for_resolution(
+        get_mode(mode_key_or_name).default_capture_region,
+        from_preset=DEFAULT_RESOLUTION_PRESET,
+        to_preset=resolution_preset,
+    )

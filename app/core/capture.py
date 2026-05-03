@@ -52,6 +52,22 @@ def get_monitors() -> list[dict[str, int]]:
         return [dict(monitor) for monitor in sct.monitors]
 
 
+def get_physical_monitors() -> list[dict[str, int]]:
+    monitors = get_monitors()
+    physical_monitors: list[dict[str, int]] = []
+    for index, monitor in enumerate(monitors[1:], start=1):
+        physical_monitors.append(
+            {
+                "index": index,
+                "left": int(monitor["left"]),
+                "top": int(monitor["top"]),
+                "width": int(monitor["width"]),
+                "height": int(monitor["height"]),
+            }
+        )
+    return physical_monitors
+
+
 def save_all_monitors(output_dir: Path) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     monitors = get_monitors()

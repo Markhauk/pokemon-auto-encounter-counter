@@ -4,22 +4,30 @@ import copy
 import json
 from pathlib import Path
 
+from app.core.display import (
+    build_default_display_setup,
+    get_capture_resolution_preset,
+    normalize_display_setup,
+)
 from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
 
 
 def build_default_config() -> dict[str, object]:
+    display_setup = build_default_display_setup()
+    resolution_preset = get_capture_resolution_preset(display_setup)
     return {
-        "version": 1,
+        "version": 3,
         "last_selected_mode": "random_grass",
         "encounter_increment": 1,
         "debug": {
             "save_debug_frames": False,
             "verbose_debug": False,
         },
+        "display_setup": display_setup,
         "modes": {
             mode.key: {
-                "capture_region": get_default_capture_region(mode.key),
+                "capture_region": get_default_capture_region(mode.key, resolution_preset=resolution_preset),
             }
             for mode in list_modes(include_unimplemented=True)
         },
@@ -44,6 +52,9 @@ class ConfigService:
             except (json.JSONDecodeError, OSError):
                 pass
 
+        config["version"] = 3
+        config["display_setup"] = normalize_display_setup(config.get("display_setup"))
+
         self._config = config
         self.save(config)
         return copy.deepcopy(config)
@@ -56,6 +67,7 @@ class ConfigService:
 
     def get_mode_region(self, mode_key: str) -> dict[str, int]:
         config = self.load()
+        resolution_preset = self.get_capture_resolution_preset()
         modes = config.get("modes", {})
         if isinstance(modes, dict):
             mode_entry = modes.get(mode_key, {})
@@ -68,7 +80,7 @@ class ConfigService:
                         "width": int(capture_region.get("width", 0)),
                         "height": int(capture_region.get("height", 0)),
                     }
-        return get_default_capture_region(mode_key)
+        return get_default_capture_region(mode_key, resolution_preset=resolution_preset)
 
     def set_mode_region(self, mode_key: str, region: dict[str, int]) -> dict[str, object]:
         config = self.load()
@@ -80,7 +92,45 @@ class ConfigService:
         return self.save(config)
 
     def restore_default_region(self, mode_key: str) -> dict[str, object]:
-        return self.set_mode_region(mode_key, get_default_capture_region(mode_key))
+        return self.set_mode_region(
+            mode_key,
+            get_default_capture_region(mode_key, resolution_preset=self.get_capture_resolution_preset()),
+        )
+
+    def get_display_setup(self) -> dict[str, object]:
+        config = self.load()
+        return normalize_display_setup(config.get("display_setup"))
+
+    def set_display_setup(self, display_setup: dict[str, object]) -> dict[str, object]:
+        config = self.load()
+        config["display_setup"] = normalize_display_setup(display_setup)
+        return self.save(config)
+
+    def get_resolution_preset(self) -> str:
+        display_setup = self.get_display_setup()
+        return str(display_setup["resolution_preset"])
+
+    def get_capture_resolution_preset(self) -> str:
+        return get_capture_resolution_preset(self.get_display_setup())
+
+    def save_capture_settings(
+        self,
+        *,
+        display_setup: dict[str, object],
+        regions: dict[str, dict[str, int]],
+    ) -> dict[str, object]:
+        config = self.load()
+        config["display_setup"] = normalize_display_setup(display_setup)
+
+        modes = config.setdefault("modes", {})
+        if not isinstance(modes, dict):
+            modes = {}
+            config["modes"] = modes
+
+        for mode_key, region in regions.items():
+            modes[mode_key] = {"capture_region": dict(region)}
+
+        return self.save(config)
 
     def get_last_selected_mode(self) -> str:
         config = self.load()

@@ -18,6 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.capture import capture_region_summary
+from app.core.display import (
+    describe_layout_cell,
+    format_monitor_summary,
+    get_capture_resolution_preset,
+    get_resolution_label,
+)
 from app.core.modes import MODE_SOFT_RESET_KEY
 from app.services.app_controller import AppController
 
@@ -152,6 +158,7 @@ class DashboardTab(QWidget):
     def _refresh_mode_hint(self) -> None:
         mode = self.controller.get_mode(self._selected_mode_key())
         region = self.controller.get_mode_region(mode.key)
+        display_setup = self.controller.get_display_setup()
         template_statuses = [
             status
             for status in self.controller.get_template_statuses()
@@ -168,7 +175,28 @@ class DashboardTab(QWidget):
         else:
             message = mode.description
 
-        message = f"{message}\nConfigured region: {capture_region_summary(region)}"
+        capture_cell = display_setup["capture_cell"]
+        capture_label = describe_layout_cell(int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
+        resolution_preset = str(display_setup["resolution_preset"])
+        capture_resolution_preset = get_capture_resolution_preset(display_setup)
+        message = (
+            f"{message}\nConfigured region: {capture_region_summary(region)}"
+            f"\nCapture monitor cell: {capture_label}"
+            f"\nResolution preset: "
+            f"{'Mixed per monitor' if display_setup['mixed_resolutions'] else f'{resolution_preset.upper()} ({get_resolution_label(resolution_preset)})'}"
+            f"\nCapture monitor resolution: {capture_resolution_preset.upper()} "
+            f"({get_resolution_label(capture_resolution_preset)})"
+        )
+
+        try:
+            selected_monitor = self.controller.get_monitor_cell_mapping(display_setup=display_setup)[
+                (int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
+            ]
+        except ValueError as exc:
+            message = f"{message}\n{exc}"
+        else:
+            message = f"{message}\nResolved monitor: {format_monitor_summary(selected_monitor)}"
+
         self.mode_hint.setText(message)
         self.capture_region_value.setText(capture_region_summary(region))
         self._update_button_state()

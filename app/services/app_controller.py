@@ -7,7 +7,13 @@ from typing import Optional
 import cv2
 from PySide6.QtCore import QObject, QThread, Signal
 
-from app.core.capture import compute_brightness_stats, get_monitors, grab_region, save_image
+from app.core.capture import compute_brightness_stats, get_monitors, get_physical_monitors, grab_region, save_image
+from app.core.display import (
+    build_absolute_capture_region,
+    build_monitor_cell_mapping,
+    format_monitor_summary,
+    normalize_display_setup,
+)
 from app.core.event_logger import EventLogger
 from app.core.modes import MODE_SOFT_RESET_KEY, get_default_capture_region, get_mode, list_modes
 from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR
@@ -56,20 +62,27 @@ class AppController(QObject):
     def get_config(self) -> dict[str, object]:
         return self.config_service.load()
 
+    def get_display_setup(self) -> dict[str, object]:
+        return self.config_service.get_display_setup()
+
     def get_mode_region(self, mode_key: str) -> dict[str, int]:
         return self.config_service.get_mode_region(mode_key)
 
     def save_capture_regions(self, regions: dict[str, dict[str, int]]) -> dict[str, object]:
-        config = self.config_service.load()
-        modes = config.setdefault("modes", {})
-        if not isinstance(modes, dict):
-            modes = {}
-            config["modes"] = modes
+        saved = self.config_service.save_capture_settings(
+            display_setup=self.config_service.get_display_setup(),
+            regions=regions,
+        )
+        self.config_changed.emit(saved)
+        return saved
 
-        for mode_key, region in regions.items():
-            modes[mode_key] = {"capture_region": dict(region)}
-
-        saved = self.config_service.save(config)
+    def save_capture_settings(
+        self,
+        *,
+        display_setup: dict[str, object],
+        regions: dict[str, dict[str, int]],
+    ) -> dict[str, object]:
+        saved = self.config_service.save_capture_settings(display_setup=display_setup, regions=regions)
         self.config_changed.emit(saved)
         return saved
 
@@ -122,8 +135,39 @@ class AppController(QObject):
     def get_monitors(self) -> list[dict[str, int]]:
         return get_monitors()
 
-    def capture_test_screenshot(self, *, mode_key: str, region: dict[str, int]) -> dict[str, object]:
-        frame_bgr = grab_region(region)
+    def get_physical_monitors(self) -> list[dict[str, int]]:
+        return get_physical_monitors()
+
+    def get_monitor_cell_mapping(
+        self,
+        *,
+        display_setup: Optional[dict[str, object]] = None,
+    ) -> dict[tuple[int, int], dict[str, int]]:
+        return build_monitor_cell_mapping(
+            display_setup=display_setup or self.get_display_setup(),
+            physical_monitors=self.get_physical_monitors(),
+        )
+
+    def capture_test_screenshot(
+        self,
+        *,
+        mode_key: str,
+        region: dict[str, int],
+        display_setup: Optional[dict[str, object]] = None,
+    ) -> dict[str, object]:
+        active_display_setup = normalize_display_setup(display_setup or self.get_display_setup())
+        physical_monitors = self.get_physical_monitors()
+        absolute_region = build_absolute_capture_region(
+            relative_region=region,
+            display_setup=active_display_setup,
+            physical_monitors=physical_monitors,
+        )
+        capture_cell = active_display_setup["capture_cell"]
+        selected_monitor = self.get_monitor_cell_mapping(display_setup=active_display_setup)[
+            (int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
+        ]
+
+        frame_bgr = grab_region(absolute_region)
         save_image(DEBUG_FRAME_FILE, frame_bgr)
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         stats = compute_brightness_stats(gray)
@@ -132,6 +176,9 @@ class AppController(QObject):
             "mode_name": get_mode(mode_key).name,
             "path": str(DEBUG_FRAME_FILE),
             "region": dict(region),
+            "absolute_region": absolute_region,
+            "monitor": dict(selected_monitor),
+            "monitor_summary": format_monitor_summary(selected_monitor),
             "stats": {
                 "min": stats.min_value,
                 "max": stats.max_value,
@@ -167,9 +214,21 @@ class AppController(QObject):
             verbose_debug=verbose_debug,
         )
 
+        display_setup = self.config_service.get_display_setup()
+        relative_region = self.config_service.get_mode_region(mode_key)
+        try:
+            absolute_region = build_absolute_capture_region(
+                relative_region=relative_region,
+                display_setup=display_setup,
+                physical_monitors=self.get_physical_monitors(),
+            )
+        except ValueError as exc:
+            self.error_occurred.emit(str(exc))
+            return
+
         request = DetectionRequest(
             mode_key=mode_key,
-            capture_region=self.config_service.get_mode_region(mode_key),
+            capture_region=absolute_region,
             encounter_increment=max(1, int(encounter_increment)),
             save_debug_frames=save_debug_frames,
             verbose_debug=verbose_debug,
@@ -247,7 +306,7 @@ class AppController(QObject):
         }
 
     def get_default_region(self, mode_key: str) -> dict[str, int]:
-        return get_default_capture_region(mode_key)
+        return get_default_capture_region(mode_key, resolution_preset=self.config_service.get_capture_resolution_preset())
 
     def mode_is_enabled(self, mode_key: str) -> bool:
         return mode_key != MODE_SOFT_RESET_KEY and get_mode(mode_key).implemented

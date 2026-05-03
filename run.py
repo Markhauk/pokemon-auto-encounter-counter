@@ -2,7 +2,8 @@ import argparse
 import signal
 import sys
 
-from app.core.capture import get_monitors, resolve_capture_region, save_all_monitors, save_monitor
+from app.core.capture import get_monitors, get_physical_monitors, resolve_capture_region, save_all_monitors, save_monitor
+from app.core.display import build_absolute_capture_region
 from app.core.detector import EncounterCounterEngine
 from app.core.exceptions import EncounterCounterError
 from app.core.modes import (
@@ -87,12 +88,19 @@ def run_mode(
     encounter_increment: int,
 ) -> None:
     default_region = config_service.get_mode_region(mode_key)
-    capture_region = resolve_capture_region(
-        args.monitor,
-        args.region,
-        args.monitor_region,
-        default_region=default_region,
-    )
+    if args.monitor is None and args.region is None and args.monitor_region is None:
+        capture_region = build_absolute_capture_region(
+            relative_region=default_region,
+            display_setup=config_service.get_display_setup(),
+            physical_monitors=get_physical_monitors(),
+        )
+    else:
+        capture_region = resolve_capture_region(
+            args.monitor,
+            args.region,
+            args.monitor_region,
+            default_region=default_region,
+        )
 
     debug_preferences = config_service.get_debug_preferences()
     save_debug_frames = bool(args.debug or args.debug_once or debug_preferences["save_debug_frames"])
