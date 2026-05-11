@@ -32,13 +32,15 @@ class LogsTab(QWidget):
         self.current_counter_value = QLabel("0")
         self.current_catch_value = QLabel("0")
         self.current_event_value = QLabel("none")
-        self.current_mode_value = QLabel("N/A")
+        self.current_filter_value = QLabel("N/A")
+        self.current_label_value = QLabel("N/A")
         self.output_dir_value = QLabel(self.controller.get_output_dir())
         self.output_dir_value.setWordWrap(True)
         summary_layout.addRow("Current counter", self.current_counter_value)
         summary_layout.addRow("Current catch counter", self.current_catch_value)
         summary_layout.addRow("Last event", self.current_event_value)
-        summary_layout.addRow("Current mode", self.current_mode_value)
+        summary_layout.addRow("Last filter", self.current_filter_value)
+        summary_layout.addRow("Active label", self.current_label_value)
         summary_layout.addRow("Output folder", self.output_dir_value)
 
         button_row = QHBoxLayout()
@@ -76,7 +78,8 @@ class LogsTab(QWidget):
         lines = []
         for event in recent_events:
             lines.append(
-                f"{event.get('timestamp', '')} | {event.get('event', '')} | "
+                f"{event.get('timestamp', '')} | {event.get('filter_name', event.get('event', ''))} | "
+                f"type={event.get('filter_event_type', event.get('event', ''))} | "
                 f"encounters={event.get('counter', 0)} | catches={event.get('catch_counter', 0)} | "
                 f"+{event.get('encounter_increment', 1)} | "
                 f"region=({event.get('capture_left', 0)}, {event.get('capture_top', 0)}, "
@@ -88,7 +91,8 @@ class LogsTab(QWidget):
         self.current_counter_value.setText(str(snapshot.get("counter", 0)))
         self.current_catch_value.setText(str(snapshot.get("catch_counter", 0)))
         self.current_event_value.setText(str(snapshot.get("last_event", "none")))
-        self.current_mode_value.setText(str(snapshot.get("mode_name", "N/A")))
+        self.current_filter_value.setText(str(snapshot.get("last_filter_name", "N/A") or "N/A"))
+        self.current_label_value.setText(str(snapshot.get("active_label", "N/A") or "N/A"))
 
     def _append_live_log(self, payload: dict[str, object]) -> None:
         timestamp = str(payload.get("timestamp", ""))

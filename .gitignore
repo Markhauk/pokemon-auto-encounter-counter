@@ -30,8 +30,17 @@ Thumbs.db
 output/
 *.log
 
+# Local config and machine-specific settings
+config.json
+
 # Local capture/template assets that may contain personal screenshots
 templates/*.png
 templates/*.jpg
 templates/*.jpeg
 templates/*.bmp
+
+# Shipped built-in templates that should remain committable
+!templates/got_away.png
+!templates/gotcha.png
+!templates/wild.png
+!templates/huh.png

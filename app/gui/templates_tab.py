@@ -37,7 +37,7 @@ class TemplatesTab(QWidget):
         self.refresh_button = QPushButton("Refresh Template Status")
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Mode", "Template", "Status", "Path"])
+        self.table.setHorizontalHeaderLabels(["Filter", "Template", "Status", "Path"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -72,7 +72,7 @@ class TemplatesTab(QWidget):
         self.table.setRowCount(len(self._statuses))
 
         for row, status in enumerate(self._statuses):
-            self.table.setItem(row, 0, QTableWidgetItem(status.mode_name))
+            self.table.setItem(row, 0, QTableWidgetItem(status.filter_name))
             self.table.setItem(row, 1, QTableWidgetItem(status.filename))
             self.table.setItem(row, 2, QTableWidgetItem(status.status_label()))
             self.table.setItem(row, 3, QTableWidgetItem(status.path))
@@ -108,7 +108,8 @@ class TemplatesTab(QWidget):
                 )
 
         details = [
-            f"Mode: {status.mode_name}",
+            f"Filter: {status.filter_name}",
+            f"Event type: {status.event_type}",
             f"Template: {status.filename}",
             f"Status: {status.status_label()}",
             f"Path: {status.path}",

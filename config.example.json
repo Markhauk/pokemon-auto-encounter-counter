@@ -1,0 +1,112 @@
+{
+  "version": 4,
+  "last_selected_mode": "filters",
+  "encounter_increment": 1,
+  "debug": {
+    "save_debug_frames": false,
+    "verbose_debug": false
+  },
+  "display_setup": {
+    "screen_count": 1,
+    "resolution_preset": "1440p",
+    "mixed_resolutions": false,
+    "layout": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "capture_cell": {
+      "row": 1,
+      "column": 1
+    },
+    "monitor_resolutions": [
+      [
+        "1440p",
+        "1440p",
+        "1440p"
+      ],
+      [
+        "1440p",
+        "1440p",
+        "1440p"
+      ]
+    ]
+  },
+  "filters": [
+    {
+      "id": "wild",
+      "name": "Wild",
+      "enabled": true,
+      "event_type": "encounter_start",
+      "template_path": "wild.png",
+      "capture_region": {
+        "left": 282,
+        "top": 1068,
+        "width": 243,
+        "height": 114
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Encounter-start filter for Safari-style wild battle text.",
+      "metadata": {}
+    },
+    {
+      "id": "gotcha",
+      "name": "Gotcha",
+      "enabled": true,
+      "event_type": "catch",
+      "template_path": "gotcha.png",
+      "capture_region": {
+        "left": 282,
+        "top": 1060,
+        "width": 935,
+        "height": 132
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Catch filter that increments encounter count and catch count.",
+      "metadata": {}
+    },
+    {
+      "id": "fled",
+      "name": "Fled",
+      "enabled": true,
+      "event_type": "fled",
+      "template_path": "got_away.png",
+      "capture_region": {
+        "left": 282,
+        "top": 1060,
+        "width": 935,
+        "height": 132
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Separate fled event filter based on the got away battle result.",
+      "metadata": {}
+    },
+    {
+      "id": "huh",
+      "name": "Huh",
+      "enabled": false,
+      "event_type": "encounter_start",
+      "template_path": "huh.png",
+      "capture_region": {
+        "left": 260,
+        "top": 1040,
+        "width": 420,
+        "height": 120
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Egg encounter event filter based on the huh prompt.",
+      "metadata": {}
+    }
+  ]
+}

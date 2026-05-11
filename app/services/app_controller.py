@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from typing import Optional
 
@@ -15,7 +16,7 @@ from app.core.display import (
     normalize_display_setup,
 )
 from app.core.event_logger import EventLogger
-from app.core.modes import MODE_SOFT_RESET_KEY, get_default_capture_region, get_mode, list_modes
+from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition
 from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR
 from app.core.state_manager import StateManager
 from app.core.templates import TemplateManager
@@ -53,66 +54,43 @@ class AppController(QObject):
 
         self.config_changed.emit(self.get_config())
 
-    def get_modes(self, *, include_unimplemented: bool = True):
-        return list_modes(include_unimplemented=include_unimplemented)
-
-    def get_mode(self, mode_key_or_name: str):
-        return get_mode(mode_key_or_name)
-
     def get_config(self) -> dict[str, object]:
         return self.config_service.load()
 
     def get_display_setup(self) -> dict[str, object]:
         return self.config_service.get_display_setup()
 
-    def get_mode_region(self, mode_key: str) -> dict[str, int]:
-        return self.config_service.get_mode_region(mode_key)
+    def get_filters(self) -> list[FilterDefinition]:
+        return self.config_service.get_filters()
 
-    def save_capture_regions(self, regions: dict[str, dict[str, int]]) -> dict[str, object]:
-        saved = self.config_service.save_capture_settings(
-            display_setup=self.config_service.get_display_setup(),
-            regions=regions,
-        )
+    def get_filter(self, filter_id: str) -> FilterDefinition | None:
+        return self.config_service.get_filter(filter_id)
+
+    def get_filter_event_types(self) -> tuple[str, ...]:
+        return FILTER_EVENT_TYPES
+
+    def create_filter(self, *, name: str | None = None) -> FilterDefinition:
+        filter_definition = self.config_service.create_filter(name=name)
+        self.config_changed.emit(self.get_config())
+        return filter_definition
+
+    def save_filter(self, updated_filter: FilterDefinition) -> dict[str, object]:
+        saved = self.config_service.replace_filter(updated_filter)
         self.config_changed.emit(saved)
         return saved
 
-    def save_capture_settings(
-        self,
-        *,
-        display_setup: dict[str, object],
-        regions: dict[str, dict[str, int]],
-    ) -> dict[str, object]:
-        saved = self.config_service.save_capture_settings(display_setup=display_setup, regions=regions)
+    def save_filters(self, filters: list[FilterDefinition]) -> dict[str, object]:
+        saved = self.config_service.save_filters(filters)
         self.config_changed.emit(saved)
         return saved
 
-    def restore_default_region(self, mode_key: str) -> dict[str, int]:
-        self.config_service.restore_default_region(mode_key)
-        config = self.config_service.load()
-        self.config_changed.emit(config)
-        return self.config_service.get_mode_region(mode_key)
-
-    def save_dashboard_preferences(
-        self,
-        *,
-        mode_key: str,
-        encounter_increment: int,
-        save_debug_frames: bool,
-        verbose_debug: bool,
-    ) -> dict[str, object]:
-        config = self.config_service.load()
-        config["last_selected_mode"] = mode_key
-        config["encounter_increment"] = max(1, int(encounter_increment))
-        config["debug"] = {
-            "save_debug_frames": bool(save_debug_frames),
-            "verbose_debug": bool(verbose_debug),
-        }
-        saved = self.config_service.save(config)
+    def delete_filter(self, filter_id: str) -> dict[str, object]:
+        saved = self.config_service.delete_filter(filter_id)
         self.config_changed.emit(saved)
         return saved
 
     def get_template_statuses(self):
-        return self.template_manager.get_required_template_statuses()
+        return self.template_manager.get_filter_template_statuses(self.get_filters())
 
     def get_recent_events(self, limit: int = 50) -> list[dict[str, object]]:
         return self.event_logger.read_recent_events(limit=limit)
@@ -151,14 +129,13 @@ class AppController(QObject):
     def capture_test_screenshot(
         self,
         *,
-        mode_key: str,
-        region: dict[str, int],
+        filter_definition: FilterDefinition,
         display_setup: Optional[dict[str, object]] = None,
     ) -> dict[str, object]:
         active_display_setup = normalize_display_setup(display_setup or self.get_display_setup())
         physical_monitors = self.get_physical_monitors()
         absolute_region = build_absolute_capture_region(
-            relative_region=region,
+            relative_region=filter_definition.capture_region,
             display_setup=active_display_setup,
             physical_monitors=physical_monitors,
         )
@@ -172,10 +149,11 @@ class AppController(QObject):
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         stats = compute_brightness_stats(gray)
         payload = {
-            "mode_key": mode_key,
-            "mode_name": get_mode(mode_key).name,
+            "filter_id": filter_definition.id,
+            "filter_name": filter_definition.name,
+            "event_type": filter_definition.event_type,
             "path": str(DEBUG_FRAME_FILE),
-            "region": dict(region),
+            "region": dict(filter_definition.capture_region),
             "absolute_region": absolute_region,
             "monitor": dict(selected_monitor),
             "monitor_summary": format_monitor_summary(selected_monitor),
@@ -190,10 +168,52 @@ class AppController(QObject):
         self.preview_captured.emit(payload)
         return payload
 
+    def save_filter_template_from_preview(self, filter_id: str) -> str:
+        filter_definition = self.get_filter(filter_id)
+        if filter_definition is None:
+            raise ValueError(f"Unknown filter: {filter_id}")
+        if not DEBUG_FRAME_FILE.exists():
+            raise FileNotFoundError("No preview image exists yet. Capture a preview first.")
+
+        destination = self.template_manager.get_path(filter_definition.template_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(DEBUG_FRAME_FILE, destination)
+        self.config_changed.emit(self.get_config())
+        return str(destination)
+
+    def save_capture_settings(
+        self,
+        *,
+        display_setup: dict[str, object],
+    ) -> dict[str, object]:
+        saved = self.config_service.save_capture_settings(
+            display_setup=display_setup,
+            filters=self.get_filters(),
+        )
+        self.config_changed.emit(saved)
+        return saved
+
+    def save_dashboard_preferences(
+        self,
+        *,
+        encounter_increment: int,
+        save_debug_frames: bool,
+        verbose_debug: bool,
+    ) -> dict[str, object]:
+        config = self.config_service.load()
+        config["last_selected_mode"] = "filters"
+        config["encounter_increment"] = max(1, int(encounter_increment))
+        config["debug"] = {
+            "save_debug_frames": bool(save_debug_frames),
+            "verbose_debug": bool(verbose_debug),
+        }
+        saved = self.config_service.save(config)
+        self.config_changed.emit(saved)
+        return saved
+
     def start_scan(
         self,
         *,
-        mode_key: str,
         encounter_increment: int,
         save_debug_frames: bool,
         verbose_debug: bool,
@@ -202,33 +222,49 @@ class AppController(QObject):
             self.error_occurred.emit("Scanning is already running.")
             return
 
-        mode = get_mode(mode_key)
-        if not mode.implemented:
-            self.error_occurred.emit(f"{mode.name} is not implemented yet.")
+        display_setup = self.config_service.get_display_setup()
+        filters = self.get_filters()
+        enabled_filters: list[FilterDefinition] = []
+        for filter_definition in filters:
+            if not filter_definition.enabled:
+                continue
+            try:
+                absolute_region = build_absolute_capture_region(
+                    relative_region=filter_definition.capture_region,
+                    display_setup=display_setup,
+                    physical_monitors=self.get_physical_monitors(),
+                )
+            except ValueError as exc:
+                self.error_occurred.emit(str(exc))
+                return
+
+            enabled_filters.append(
+                FilterDefinition(
+                    id=filter_definition.id,
+                    name=filter_definition.name,
+                    enabled=True,
+                    event_type=filter_definition.event_type,
+                    template_path=filter_definition.template_path,
+                    capture_region=absolute_region,
+                    threshold=filter_definition.threshold,
+                    built_in=filter_definition.built_in,
+                    description=filter_definition.description,
+                    metadata=dict(filter_definition.metadata),
+                )
+            )
+
+        if not enabled_filters:
+            self.error_occurred.emit("No enabled filters are configured for scanning.")
             return
 
         self.save_dashboard_preferences(
-            mode_key=mode_key,
             encounter_increment=encounter_increment,
             save_debug_frames=save_debug_frames,
             verbose_debug=verbose_debug,
         )
 
-        display_setup = self.config_service.get_display_setup()
-        relative_region = self.config_service.get_mode_region(mode_key)
-        try:
-            absolute_region = build_absolute_capture_region(
-                relative_region=relative_region,
-                display_setup=display_setup,
-                physical_monitors=self.get_physical_monitors(),
-            )
-        except ValueError as exc:
-            self.error_occurred.emit(str(exc))
-            return
-
         request = DetectionRequest(
-            mode_key=mode_key,
-            capture_region=absolute_region,
+            filters=enabled_filters,
             encounter_increment=max(1, int(encounter_increment)),
             save_debug_frames=save_debug_frames,
             verbose_debug=verbose_debug,
@@ -276,40 +312,32 @@ class AppController(QObject):
 
     def build_idle_snapshot(self) -> dict[str, object]:
         state = self.get_state_dict()
-        mode_key = str(state.get("mode_key", self.config_service.get_last_selected_mode()))
-        try:
-            mode = get_mode(mode_key)
-        except ValueError:
-            mode = get_mode(self.config_service.get_last_selected_mode())
-
-        capture_region = state.get("capture_region")
-        if not isinstance(capture_region, dict):
-            capture_region = self.config_service.get_mode_region(mode.key)
+        filters = self.get_filters()
 
         return {
             "status": self._runtime_status,
-            "mode_key": mode.key,
-            "mode_name": mode.name,
+            "mode_key": "filters",
+            "mode_name": "Filter scan",
             "encounter_increment": int(state.get("encounter_increment", self.config_service.get_encounter_increment())),
+            "enabled_filter_count": len([filter_definition for filter_definition in filters if filter_definition.enabled]),
             "counter": int(state.get("counter", 0)),
             "catch_counter": int(state.get("catch_counter", 0)),
             "last_event": str(state.get("last_event", "none")),
             "last_event_at": state.get("last_event_at"),
             "last_match_score": float(state.get("last_match_score", 0.0)),
+            "last_filter_id": str(state.get("last_filter_id", "")),
+            "last_filter_name": str(state.get("last_filter_name", "")),
+            "last_filter_event_type": str(state.get("last_filter_event_type", "")),
+            "active_label": str(state.get("active_label", "")),
             "last_catch_at_encounter": int(state.get("last_catch_at_encounter", 0)),
             "encounters_since_last_catch": int(state.get("encounters_since_last_catch", 0)),
-            "capture_region": dict(capture_region),
+            "capture_region": state.get("capture_region"),
             "waiting_for_clear": bool(state.get("waiting_for_clear", False)),
             "cooldown_until": float(state.get("cooldown_until", 0.0)),
             "frame_index": 0,
+            "filters_runtime": state.get("filters_runtime", {}),
             "error_message": "",
         }
-
-    def get_default_region(self, mode_key: str) -> dict[str, int]:
-        return get_default_capture_region(mode_key, resolution_preset=self.config_service.get_capture_resolution_preset())
-
-    def mode_is_enabled(self, mode_key: str) -> bool:
-        return mode_key != MODE_SOFT_RESET_KEY and get_mode(mode_key).implemented
 
     def _handle_worker_status(self, snapshot: dict[str, object]) -> None:
         self._current_snapshot = snapshot

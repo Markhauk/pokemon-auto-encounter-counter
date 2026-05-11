@@ -7,6 +7,7 @@ from app.services.app_controller import AppController
 
 from .capture_settings_tab import CaptureSettingsTab
 from .dashboard_tab import DashboardTab
+from .filters_tab import FiltersTab
 from .logs_tab import LogsTab
 from .templates_tab import TemplatesTab
 
@@ -20,6 +21,7 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         tabs.addTab(DashboardTab(controller), "Dashboard")
+        tabs.addTab(FiltersTab(controller), "Filters")
         tabs.addTab(CaptureSettingsTab(controller), "Capture Settings")
         tabs.addTab(TemplatesTab(controller), "Templates")
         tabs.addTab(LogsTab(controller), "Logs / State")

@@ -9,6 +9,12 @@ from app.core.display import (
     get_capture_resolution_preset,
     normalize_display_setup,
 )
+from app.core.filters import (
+    FilterDefinition,
+    build_builtin_filters,
+    normalize_filter_definitions,
+    slugify_filter_name,
+)
 from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
 
@@ -17,20 +23,18 @@ def build_default_config() -> dict[str, object]:
     display_setup = build_default_display_setup()
     resolution_preset = get_capture_resolution_preset(display_setup)
     return {
-        "version": 3,
-        "last_selected_mode": "random_grass",
+        "version": 4,
+        "last_selected_mode": "filters",
         "encounter_increment": 1,
         "debug": {
             "save_debug_frames": False,
             "verbose_debug": False,
         },
         "display_setup": display_setup,
-        "modes": {
-            mode.key: {
-                "capture_region": get_default_capture_region(mode.key, resolution_preset=resolution_preset),
-            }
-            for mode in list_modes(include_unimplemented=True)
-        },
+        "filters": [
+            filter_definition.as_dict()
+            for filter_definition in build_builtin_filters(resolution_preset=resolution_preset)
+        ],
     }
 
 
@@ -52,8 +56,18 @@ class ConfigService:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        config["version"] = 3
+        config["version"] = 4
         config["display_setup"] = normalize_display_setup(config.get("display_setup"))
+        resolution_preset = get_capture_resolution_preset(config["display_setup"])  # type: ignore[arg-type]
+        legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
+        config["filters"] = [
+            filter_definition.as_dict()
+            for filter_definition in normalize_filter_definitions(
+                config.get("filters"),
+                resolution_preset=resolution_preset,
+                legacy_mode_regions=legacy_mode_regions,
+            )
+        ]
 
         self._config = config
         self.save(config)
@@ -61,26 +75,23 @@ class ConfigService:
 
     def save(self, config: dict[str, object] | None = None) -> dict[str, object]:
         current = copy.deepcopy(config or self.load())
+        current.pop("modes", None)
         self.config_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         self._config = current
         return copy.deepcopy(current)
 
     def get_mode_region(self, mode_key: str) -> dict[str, int]:
-        config = self.load()
-        resolution_preset = self.get_capture_resolution_preset()
-        modes = config.get("modes", {})
-        if isinstance(modes, dict):
-            mode_entry = modes.get(mode_key, {})
-            if isinstance(mode_entry, dict):
-                capture_region = mode_entry.get("capture_region", {})
-                if isinstance(capture_region, dict):
-                    return {
-                        "left": int(capture_region.get("left", 0)),
-                        "top": int(capture_region.get("top", 0)),
-                        "width": int(capture_region.get("width", 0)),
-                        "height": int(capture_region.get("height", 0)),
-                    }
-        return get_default_capture_region(mode_key, resolution_preset=resolution_preset)
+        legacy_mapping = {
+            "random_grass": "fled",
+            "safari_zone": "wild",
+            "egg_mode": "huh",
+        }
+        filter_id = legacy_mapping.get(mode_key)
+        if filter_id:
+            filter_definition = self.get_filter(filter_id)
+            if filter_definition is not None:
+                return dict(filter_definition.capture_region)
+        return get_default_capture_region(mode_key, resolution_preset=self.get_capture_resolution_preset())
 
     def set_mode_region(self, mode_key: str, region: dict[str, int]) -> dict[str, object]:
         config = self.load()
@@ -117,18 +128,33 @@ class ConfigService:
         self,
         *,
         display_setup: dict[str, object],
-        regions: dict[str, dict[str, int]],
+        filters: list[FilterDefinition] | None = None,
+        regions: dict[str, dict[str, int]] | None = None,
     ) -> dict[str, object]:
         config = self.load()
         config["display_setup"] = normalize_display_setup(display_setup)
 
-        modes = config.setdefault("modes", {})
-        if not isinstance(modes, dict):
-            modes = {}
-            config["modes"] = modes
+        active_filters = filters or self.get_filters()
+        region_overrides = regions or {}
+        rewritten_filters: list[dict[str, object]] = []
+        for filter_definition in active_filters:
+            capture_region = region_overrides.get(filter_definition.id, filter_definition.capture_region)
+            rewritten_filters.append(
+                FilterDefinition(
+                    id=filter_definition.id,
+                    name=filter_definition.name,
+                    enabled=filter_definition.enabled,
+                    event_type=filter_definition.event_type,
+                    template_path=filter_definition.template_path,
+                    capture_region=dict(capture_region),
+                    threshold=filter_definition.threshold,
+                    built_in=filter_definition.built_in,
+                    description=filter_definition.description,
+                    metadata=dict(filter_definition.metadata),
+                ).as_dict()
+            )
 
-        for mode_key, region in regions.items():
-            modes[mode_key] = {"capture_region": dict(region)}
+        config["filters"] = rewritten_filters
 
         return self.save(config)
 
@@ -177,6 +203,91 @@ class ConfigService:
         if not self.config_path.exists():
             self.save(build_default_config())
         return self.config_path.read_text(encoding="utf-8")
+
+    def get_filters(self) -> list[FilterDefinition]:
+        config = self.load()
+        resolution_preset = self.get_capture_resolution_preset()
+        legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
+        return normalize_filter_definitions(
+            config.get("filters"),
+            resolution_preset=resolution_preset,
+            legacy_mode_regions=legacy_mode_regions,
+        )
+
+    def get_filter(self, filter_id: str) -> FilterDefinition | None:
+        for filter_definition in self.get_filters():
+            if filter_definition.id == filter_id:
+                return filter_definition
+        return None
+
+    def save_filters(self, filters: list[FilterDefinition]) -> dict[str, object]:
+        config = self.load()
+        config["filters"] = [filter_definition.as_dict() for filter_definition in filters]
+        return self.save(config)
+
+    def generate_filter_id(self, preferred_name: str) -> str:
+        base = slugify_filter_name(preferred_name)
+        existing_ids = {filter_definition.id for filter_definition in self.get_filters()}
+        if base not in existing_ids:
+            return base
+
+        suffix = 2
+        while f"{base}_{suffix}" in existing_ids:
+            suffix += 1
+        return f"{base}_{suffix}"
+
+    def create_filter(self, *, name: str | None = None) -> FilterDefinition:
+        filters = self.get_filters()
+        display_setup = self.get_display_setup()
+        resolution_preset = get_capture_resolution_preset(display_setup)
+        next_name = name or f"New Filter {len(filters) + 1}"
+        filter_id = self.generate_filter_id(next_name)
+        filter_definition = FilterDefinition(
+            id=filter_id,
+            name=next_name,
+            enabled=True,
+            event_type="info",
+            template_path=f"{filter_id}.png",
+            capture_region=get_default_capture_region("random_grass", resolution_preset=resolution_preset),
+            threshold=0.85,
+            built_in=False,
+            description="Custom filter.",
+        )
+        filters.append(filter_definition)
+        self.save_filters(filters)
+        return filter_definition
+
+    def delete_filter(self, filter_id: str) -> dict[str, object]:
+        filters = [filter_definition for filter_definition in self.get_filters() if filter_definition.id != filter_id]
+        return self.save_filters(filters)
+
+    def replace_filter(self, updated_filter: FilterDefinition) -> dict[str, object]:
+        filters = self.get_filters()
+        rewritten_filters = [
+            updated_filter if filter_definition.id == updated_filter.id else filter_definition
+            for filter_definition in filters
+        ]
+        return self.save_filters(rewritten_filters)
+
+    def _extract_legacy_mode_regions(self, raw_modes: object) -> dict[str, dict[str, int]]:
+        if not isinstance(raw_modes, dict):
+            return {}
+
+        extracted: dict[str, dict[str, int]] = {}
+        for mode in list_modes(include_unimplemented=True):
+            mode_entry = raw_modes.get(mode.key)
+            if not isinstance(mode_entry, dict):
+                continue
+            capture_region = mode_entry.get("capture_region")
+            if not isinstance(capture_region, dict):
+                continue
+            extracted[mode.key] = {
+                "left": int(capture_region.get("left", 0)),
+                "top": int(capture_region.get("top", 0)),
+                "width": int(capture_region.get("width", 1)),
+                "height": int(capture_region.get("height", 1)),
+            }
+        return extracted
 
     def _merge_dicts(self, base: dict[str, object], incoming: dict[str, object]) -> dict[str, object]:
         merged = copy.deepcopy(base)

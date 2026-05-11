@@ -101,6 +101,12 @@ class EventLogger:
         return {
             "timestamp": str(payload.get("timestamp", "")),
             "event": str(payload.get("event", "")),
+            "filter_id": str(payload.get("filter_id", "")),
+            "filter_name": str(payload.get("filter_name", "")),
+            "filter_event_type": str(payload.get("filter_event_type", "")),
+            "filter_threshold": round(float(payload.get("filter_threshold", 0.0)), 6),
+            "template_path": str(payload.get("template_path", "")),
+            "active_label": str(payload.get("active_label", "")),
             "counter": int(payload.get("counter", 0)),
             "catch_counter": int(payload.get("catch_counter", 0)),
             "encounter_increment": int(payload.get("encounter_increment", 1)),

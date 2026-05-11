@@ -294,6 +294,7 @@ If a required template is missing or unreadable, the application surfaces that i
 The main local config file is:
 
 - `config.json`
+- `config.example.json`
 
 It stores:
 
@@ -301,6 +302,11 @@ It stores:
 - encounter increment
 - debug preferences
 - per-mode capture regions
+
+Notes:
+
+- `config.json` is local machine-specific and is intended to stay uncommitted
+- `config.example.json` is the safe committed reference for default app settings
 
 ## Known Limitations
 

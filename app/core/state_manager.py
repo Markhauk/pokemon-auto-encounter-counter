@@ -131,9 +131,15 @@ class StateManager:
             "last_event": "none",
             "last_event_at": None,
             "last_match_score": 0.0,
+            "last_filter_id": "",
+            "last_filter_name": "",
+            "last_filter_event_type": "",
+            "active_label": "",
+            "enabled_filter_count": 0,
             "last_catch_at_encounter": 0,
             "encounters_since_last_catch": 0,
             "capture_region": dict(capture_region),
+            "filters_runtime": {},
             "mode_key": mode_key,
             "mode_name": mode_name,
         }
@@ -154,8 +160,15 @@ class StateManager:
                 state["last_event"] = str(data.get("last_event", "none"))
                 state["last_event_at"] = data.get("last_event_at")
                 state["last_match_score"] = _safe_float(data.get("last_match_score"), 0.0)
+                state["last_filter_id"] = str(data.get("last_filter_id", ""))
+                state["last_filter_name"] = str(data.get("last_filter_name", ""))
+                state["last_filter_event_type"] = str(data.get("last_filter_event_type", ""))
+                state["active_label"] = str(data.get("active_label", ""))
+                state["enabled_filter_count"] = _safe_int(data.get("enabled_filter_count"), 0)
                 state["last_catch_at_encounter"] = _safe_int(data.get("last_catch_at_encounter"), 0)
                 state["encounters_since_last_catch"] = _safe_int(data.get("encounters_since_last_catch"), 0)
+                if isinstance(data.get("filters_runtime"), dict):
+                    state["filters_runtime"] = data.get("filters_runtime", {})
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -183,9 +196,15 @@ class StateManager:
                     "last_event": snapshot.last_event,
                     "last_event_at": snapshot.last_event_at,
                     "last_match_score": snapshot.last_match_score,
+                    "last_filter_id": snapshot.last_filter_id,
+                    "last_filter_name": snapshot.last_filter_name,
+                    "last_filter_event_type": snapshot.last_filter_event_type,
+                    "active_label": snapshot.active_label,
+                    "enabled_filter_count": snapshot.enabled_filter_count,
                     "last_catch_at_encounter": snapshot.last_catch_at_encounter,
                     "encounters_since_last_catch": snapshot.encounters_since_last_catch,
                     "capture_region": snapshot.capture_region,
+                    "filters_runtime": snapshot.filters_runtime,
                     "mode_key": snapshot.mode_key,
                     "mode_name": snapshot.mode_name,
                     "status": snapshot.status,

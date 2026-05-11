@@ -6,14 +6,14 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.core.detector import EncounterCounterEngine
+from app.core.filters import FilterDefinition
 from app.core.paths import LOCK_FILE
 from app.core.state_manager import SingleInstanceGuard
 
 
 @dataclass(frozen=True)
 class DetectionRequest:
-    mode_key: str
-    capture_region: dict[str, int]
+    filters: list[FilterDefinition]
     encounter_increment: int
     save_debug_frames: bool = False
     verbose_debug: bool = False
@@ -36,10 +36,9 @@ class DetectionWorker(QObject):
         try:
             with SingleInstanceGuard(LOCK_FILE):
                 self._engine = EncounterCounterEngine(
-                    capture_region=self.request.capture_region,
+                    filters=self.request.filters,
                     save_debug_frames=self.request.save_debug_frames,
                     verbose_debug=self.request.verbose_debug,
-                    mode_key=self.request.mode_key,
                     encounter_increment=self.request.encounter_increment,
                     log_handler=self._emit_log,
                     status_handler=self._emit_status,

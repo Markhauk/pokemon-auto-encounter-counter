@@ -20,6 +20,12 @@ DEFAULT_RECENT_EVENT_LIMIT = 50
 EVENT_LOG_CSV_FIELDS = [
     "timestamp",
     "event",
+    "filter_id",
+    "filter_name",
+    "filter_event_type",
+    "filter_threshold",
+    "template_path",
+    "active_label",
     "counter",
     "catch_counter",
     "encounter_increment",
