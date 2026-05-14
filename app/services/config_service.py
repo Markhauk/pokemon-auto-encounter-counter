@@ -10,10 +10,17 @@ from app.core.display import (
     normalize_display_setup,
 )
 from app.core.filters import (
+    DEFAULT_GAME_ID,
     FilterDefinition,
+    GameDefinition,
     build_builtin_filters,
+    build_builtin_games,
+    get_filter_game_id,
     normalize_filter_definitions,
+    normalize_game_definitions,
+    normalize_game_id,
     slugify_filter_name,
+    slugify_game_name,
 )
 from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
@@ -23,14 +30,19 @@ def build_default_config() -> dict[str, object]:
     display_setup = build_default_display_setup()
     resolution_preset = get_capture_resolution_preset(display_setup)
     return {
-        "version": 4,
+        "version": 5,
         "last_selected_mode": "filters",
+        "active_game_id": DEFAULT_GAME_ID,
         "encounter_increment": 1,
         "debug": {
             "save_debug_frames": False,
             "verbose_debug": False,
         },
         "display_setup": display_setup,
+        "games": [
+            game_definition.as_dict()
+            for game_definition in build_builtin_games()
+        ],
         "filters": [
             filter_definition.as_dict()
             for filter_definition in build_builtin_filters(resolution_preset=resolution_preset)
@@ -56,18 +68,39 @@ class ConfigService:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        config["version"] = 4
+        config["version"] = 5
         config["display_setup"] = normalize_display_setup(config.get("display_setup"))
         resolution_preset = get_capture_resolution_preset(config["display_setup"])  # type: ignore[arg-type]
-        legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
-        config["filters"] = [
-            filter_definition.as_dict()
-            for filter_definition in normalize_filter_definitions(
-                config.get("filters"),
-                resolution_preset=resolution_preset,
-                legacy_mode_regions=legacy_mode_regions,
-            )
+        config["games"] = [
+            game_definition.as_dict()
+            for game_definition in normalize_game_definitions(config.get("games"))
         ]
+        legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
+        normalized_filters = normalize_filter_definitions(
+            config.get("filters"),
+            resolution_preset=resolution_preset,
+            legacy_mode_regions=legacy_mode_regions,
+        )
+        existing_games = normalize_game_definitions(config.get("games"))
+        existing_game_ids = {game.id for game in existing_games}
+        missing_game_ids = sorted({get_filter_game_id(filter_definition) for filter_definition in normalized_filters} - existing_game_ids)
+        for missing_game_id in missing_game_ids:
+            existing_games.append(
+                GameDefinition(
+                    id=missing_game_id,
+                    name=missing_game_id,
+                    built_in=False,
+                    description="Recovered from filter metadata.",
+                )
+            )
+
+        config["games"] = [game_definition.as_dict() for game_definition in existing_games]
+        valid_game_ids = {game.id for game in existing_games}
+        active_game_id = normalize_game_id(config.get("active_game_id", DEFAULT_GAME_ID))
+        if active_game_id not in valid_game_ids:
+            active_game_id = existing_games[0].id if existing_games else DEFAULT_GAME_ID
+        config["active_game_id"] = active_game_id
+        config["filters"] = [filter_definition.as_dict() for filter_definition in normalized_filters]
 
         self._config = config
         self.save(config)
@@ -111,6 +144,30 @@ class ConfigService:
     def get_display_setup(self) -> dict[str, object]:
         config = self.load()
         return normalize_display_setup(config.get("display_setup"))
+
+    def get_games(self) -> list[GameDefinition]:
+        config = self.load()
+        return normalize_game_definitions(config.get("games"))
+
+    def get_game(self, game_id: str) -> GameDefinition | None:
+        normalized_game_id = slugify_game_name(game_id)
+        for game_definition in self.get_games():
+            if game_definition.id == normalized_game_id:
+                return game_definition
+        return None
+
+    def get_active_game_id(self) -> str:
+        config = self.load()
+        configured_game_id = slugify_game_name(str(config.get("active_game_id", DEFAULT_GAME_ID)))
+        if self.get_game(configured_game_id) is not None:
+            return configured_game_id
+        return DEFAULT_GAME_ID
+
+    def set_active_game_id(self, game_id: str) -> dict[str, object]:
+        config = self.load()
+        normalized_game_id = normalize_game_id(game_id)
+        config["active_game_id"] = normalized_game_id if self.get_game(normalized_game_id) is not None else DEFAULT_GAME_ID
+        return self.save(config)
 
     def set_display_setup(self, display_setup: dict[str, object]) -> dict[str, object]:
         config = self.load()
@@ -204,15 +261,24 @@ class ConfigService:
             self.save(build_default_config())
         return self.config_path.read_text(encoding="utf-8")
 
-    def get_filters(self) -> list[FilterDefinition]:
+    def get_filters(self, *, game_id: str | None = None) -> list[FilterDefinition]:
         config = self.load()
         resolution_preset = self.get_capture_resolution_preset()
         legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
-        return normalize_filter_definitions(
+        filters = normalize_filter_definitions(
             config.get("filters"),
             resolution_preset=resolution_preset,
             legacy_mode_regions=legacy_mode_regions,
         )
+        if game_id is None:
+            return filters
+
+        normalized_game_id = slugify_game_name(game_id)
+        return [
+            filter_definition
+            for filter_definition in filters
+            if get_filter_game_id(filter_definition) == normalized_game_id
+        ]
 
     def get_filter(self, filter_id: str) -> FilterDefinition | None:
         for filter_definition in self.get_filters():
@@ -223,6 +289,11 @@ class ConfigService:
     def save_filters(self, filters: list[FilterDefinition]) -> dict[str, object]:
         config = self.load()
         config["filters"] = [filter_definition.as_dict() for filter_definition in filters]
+        return self.save(config)
+
+    def save_games(self, games: list[GameDefinition]) -> dict[str, object]:
+        config = self.load()
+        config["games"] = [game_definition.as_dict() for game_definition in games]
         return self.save(config)
 
     def generate_filter_id(self, preferred_name: str) -> str:
@@ -236,12 +307,70 @@ class ConfigService:
             suffix += 1
         return f"{base}_{suffix}"
 
-    def create_filter(self, *, name: str | None = None) -> FilterDefinition:
+    def generate_game_id(self, preferred_name: str) -> str:
+        base = slugify_game_name(preferred_name)
+        existing_ids = {game_definition.id for game_definition in self.get_games()}
+        if base not in existing_ids:
+            return base
+
+        suffix = 2
+        while f"{base}_{suffix}" in existing_ids:
+            suffix += 1
+        return f"{base}_{suffix}"
+
+    def create_game(self, *, name: str | None = None) -> GameDefinition:
+        games = self.get_games()
+        next_name = name or f"New Game {len(games) + 1}"
+        game_definition = GameDefinition(
+            id=self.generate_game_id(next_name),
+            name=next_name,
+            built_in=False,
+            description="Custom game filter group.",
+        )
+        games.append(game_definition)
+
+        config = self.load()
+        config["games"] = [game.as_dict() for game in games]
+        config["active_game_id"] = game_definition.id
+        self.save(config)
+        return game_definition
+
+    def delete_game(self, game_id: str) -> dict[str, object]:
+        normalized_game_id = slugify_game_name(game_id)
+        games = self.get_games()
+        target_game = next((game for game in games if game.id == normalized_game_id), None)
+        if target_game is None:
+            return self.load()
+        if target_game.built_in:
+            raise ValueError("Built-in games cannot be deleted.")
+
+        rewritten_games = [game for game in games if game.id != normalized_game_id]
+        rewritten_filters = [
+            filter_definition
+            for filter_definition in self.get_filters()
+            if get_filter_game_id(filter_definition) != normalized_game_id
+        ]
+
+        config = self.load()
+        config["games"] = [game.as_dict() for game in rewritten_games]
+        config["filters"] = [filter_definition.as_dict() for filter_definition in rewritten_filters]
+
+        active_game_id = str(config.get("active_game_id", DEFAULT_GAME_ID))
+        if active_game_id == normalized_game_id:
+            next_game = rewritten_games[0] if rewritten_games else build_builtin_games()[0]
+            config["active_game_id"] = next_game.id
+
+        return self.save(config)
+
+    def create_filter(self, *, name: str | None = None, game_id: str | None = None) -> FilterDefinition:
         filters = self.get_filters()
         display_setup = self.get_display_setup()
         resolution_preset = get_capture_resolution_preset(display_setup)
         next_name = name or f"New Filter {len(filters) + 1}"
         filter_id = self.generate_filter_id(next_name)
+        target_game_id = normalize_game_id(game_id or self.get_active_game_id())
+        if self.get_game(target_game_id) is None:
+            target_game_id = DEFAULT_GAME_ID
         filter_definition = FilterDefinition(
             id=filter_id,
             name=next_name,
@@ -252,6 +381,7 @@ class ConfigService:
             threshold=0.85,
             built_in=False,
             description="Custom filter.",
+            metadata={"game_id": target_game_id},
         )
         filters.append(filter_definition)
         self.save_filters(filters)

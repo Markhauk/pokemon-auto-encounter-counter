@@ -16,7 +16,7 @@ from app.core.display import (
     normalize_display_setup,
 )
 from app.core.event_logger import EventLogger
-from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition
+from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition, GameDefinition
 from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR
 from app.core.state_manager import StateManager
 from app.core.templates import TemplateManager
@@ -60,8 +60,35 @@ class AppController(QObject):
     def get_display_setup(self) -> dict[str, object]:
         return self.config_service.get_display_setup()
 
-    def get_filters(self) -> list[FilterDefinition]:
-        return self.config_service.get_filters()
+    def get_games(self) -> list[GameDefinition]:
+        return self.config_service.get_games()
+
+    def get_game(self, game_id: str) -> GameDefinition | None:
+        return self.config_service.get_game(game_id)
+
+    def get_active_game_id(self) -> str:
+        return self.config_service.get_active_game_id()
+
+    def set_active_game_id(self, game_id: str) -> dict[str, object]:
+        saved = self.config_service.set_active_game_id(game_id)
+        self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
+        return saved
+
+    def create_game(self, *, name: str | None = None) -> GameDefinition:
+        game_definition = self.config_service.create_game(name=name)
+        self.config_changed.emit(self.get_config())
+        self._emit_idle_snapshot_if_needed()
+        return game_definition
+
+    def delete_game(self, game_id: str) -> dict[str, object]:
+        saved = self.config_service.delete_game(game_id)
+        self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
+        return saved
+
+    def get_filters(self, *, game_id: str | None = None) -> list[FilterDefinition]:
+        return self.config_service.get_filters(game_id=game_id)
 
     def get_filter(self, filter_id: str) -> FilterDefinition | None:
         return self.config_service.get_filter(filter_id)
@@ -69,28 +96,32 @@ class AppController(QObject):
     def get_filter_event_types(self) -> tuple[str, ...]:
         return FILTER_EVENT_TYPES
 
-    def create_filter(self, *, name: str | None = None) -> FilterDefinition:
-        filter_definition = self.config_service.create_filter(name=name)
+    def create_filter(self, *, name: str | None = None, game_id: str | None = None) -> FilterDefinition:
+        filter_definition = self.config_service.create_filter(name=name, game_id=game_id)
         self.config_changed.emit(self.get_config())
+        self._emit_idle_snapshot_if_needed()
         return filter_definition
 
     def save_filter(self, updated_filter: FilterDefinition) -> dict[str, object]:
         saved = self.config_service.replace_filter(updated_filter)
         self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
         return saved
 
     def save_filters(self, filters: list[FilterDefinition]) -> dict[str, object]:
         saved = self.config_service.save_filters(filters)
         self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
         return saved
 
     def delete_filter(self, filter_id: str) -> dict[str, object]:
         saved = self.config_service.delete_filter(filter_id)
         self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
         return saved
 
-    def get_template_statuses(self):
-        return self.template_manager.get_filter_template_statuses(self.get_filters())
+    def get_template_statuses(self, *, game_id: str | None = None):
+        return self.template_manager.get_filter_template_statuses(self.get_filters(game_id=game_id))
 
     def get_recent_events(self, limit: int = 50) -> list[dict[str, object]]:
         return self.event_logger.read_recent_events(limit=limit)
@@ -191,6 +222,7 @@ class AppController(QObject):
             filters=self.get_filters(),
         )
         self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
         return saved
 
     def save_dashboard_preferences(
@@ -209,6 +241,7 @@ class AppController(QObject):
         }
         saved = self.config_service.save(config)
         self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
         return saved
 
     def start_scan(
@@ -223,7 +256,9 @@ class AppController(QObject):
             return
 
         display_setup = self.config_service.get_display_setup()
-        filters = self.get_filters()
+        active_game_id = self.get_active_game_id()
+        active_game = self.get_game(active_game_id)
+        filters = self.get_filters(game_id=active_game_id)
         enabled_filters: list[FilterDefinition] = []
         for filter_definition in filters:
             if not filter_definition.enabled:
@@ -254,7 +289,10 @@ class AppController(QObject):
             )
 
         if not enabled_filters:
-            self.error_occurred.emit("No enabled filters are configured for scanning.")
+            if active_game is None:
+                self.error_occurred.emit("No enabled filters are configured for scanning.")
+            else:
+                self.error_occurred.emit(f"No enabled filters are configured for '{active_game.name}'.")
             return
 
         self.save_dashboard_preferences(
@@ -312,12 +350,16 @@ class AppController(QObject):
 
     def build_idle_snapshot(self) -> dict[str, object]:
         state = self.get_state_dict()
-        filters = self.get_filters()
+        active_game_id = self.get_active_game_id()
+        active_game = self.get_game(active_game_id)
+        filters = self.get_filters(game_id=active_game_id)
 
         return {
             "status": self._runtime_status,
             "mode_key": "filters",
-            "mode_name": "Filter scan",
+            "mode_name": f"{active_game.name} scan" if active_game is not None else "Filter scan",
+            "active_game_id": active_game_id,
+            "active_game_name": active_game.name if active_game is not None else active_game_id,
             "encounter_increment": int(state.get("encounter_increment", self.config_service.get_encounter_increment())),
             "enabled_filter_count": len([filter_definition for filter_definition in filters if filter_definition.enabled]),
             "counter": int(state.get("counter", 0)),
@@ -360,4 +402,10 @@ class AppController(QObject):
             self.runtime_status_changed.emit(self._runtime_status)
         if self._current_snapshot is None:
             self._current_snapshot = self.build_idle_snapshot()
+        self.snapshot_changed.emit(self._current_snapshot)
+
+    def _emit_idle_snapshot_if_needed(self) -> None:
+        if self.is_running():
+            return
+        self._current_snapshot = self.build_idle_snapshot()
         self.snapshot_changed.emit(self._current_snapshot)

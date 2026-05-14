@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.filters import FilterDefinition
+from app.core.filters import FilterDefinition, GameDefinition
 from app.services.app_controller import AppController
 
 
@@ -30,7 +31,9 @@ class FiltersTab(QWidget):
     def __init__(self, controller: AppController) -> None:
         super().__init__()
         self.controller = controller
+        self._games: list[GameDefinition] = []
         self._filters: list[FilterDefinition] = []
+        self._selected_game_id = ""
         self._selected_filter_id = ""
         self._loading = False
         self._build_ui()
@@ -43,11 +46,29 @@ class FiltersTab(QWidget):
         left_panel = QVBoxLayout()
         right_panel = QVBoxLayout()
 
+        game_group = QGroupBox("Games")
+        game_layout = QVBoxLayout(game_group)
+        game_controls = QHBoxLayout()
+        self.game_combo = QComboBox()
+        self.add_game_button = QPushButton("Add Game")
+        self.delete_game_button = QPushButton("Delete Game")
+        game_controls.addWidget(self.game_combo, 1)
+        game_controls.addWidget(self.add_game_button)
+        game_controls.addWidget(self.delete_game_button)
+
+        self.game_help_label = QLabel(
+            "Select a game first. The filters list below only shows filters for the selected game."
+        )
+        self.game_help_label.setWordWrap(True)
+        game_layout.addLayout(game_controls)
+        game_layout.addWidget(self.game_help_label)
+
         self.filter_list = QListWidget()
         self.add_button = QPushButton("Add Filter")
         self.delete_button = QPushButton("Delete Filter")
         self.refresh_button = QPushButton("Refresh")
 
+        left_panel.addWidget(game_group)
         left_panel.addWidget(QLabel("Configured Filters"))
         left_panel.addWidget(self.filter_list, 1)
         left_panel.addWidget(self.add_button)
@@ -59,6 +80,7 @@ class FiltersTab(QWidget):
         form = QFormLayout()
 
         self.enabled_checkbox = QCheckBox("Enabled")
+        self.game_name_value = QLabel("No game selected.")
         self.name_edit = QLineEdit()
         self.event_type_combo = QComboBox()
         for event_type in self.controller.get_filter_event_types():
@@ -79,6 +101,7 @@ class FiltersTab(QWidget):
         self.region_height_spin.setRange(1, 10000)
 
         form.addRow("", self.enabled_checkbox)
+        form.addRow("Game", self.game_name_value)
         form.addRow("Name", self.name_edit)
         form.addRow("Event type", self.event_type_combo)
         form.addRow("Template path", self.template_path_edit)
@@ -121,7 +144,10 @@ class FiltersTab(QWidget):
         root_layout.addLayout(right_panel, 2)
 
     def _connect_signals(self) -> None:
+        self.game_combo.currentIndexChanged.connect(self._handle_game_changed)
         self.filter_list.currentItemChanged.connect(self._handle_selection_changed)
+        self.add_game_button.clicked.connect(self._add_game)
+        self.delete_game_button.clicked.connect(self._delete_game)
         self.add_button.clicked.connect(self._add_filter)
         self.delete_button.clicked.connect(self._delete_filter)
         self.refresh_button.clicked.connect(self.refresh)
@@ -134,9 +160,20 @@ class FiltersTab(QWidget):
         self.controller.error_occurred.connect(self._show_error)
 
     def refresh(self) -> None:
-        self._filters = self.controller.get_filters()
+        self._games = self.controller.get_games()
+        self._selected_game_id = self.controller.get_active_game_id()
+        self._filters = self.controller.get_filters(game_id=self._selected_game_id)
+
         self._loading = True
         try:
+            self.game_combo.clear()
+            for game_definition in self._games:
+                self.game_combo.addItem(game_definition.name, game_definition.id)
+
+            selected_game_index = self.game_combo.findData(self._selected_game_id)
+            if selected_game_index >= 0:
+                self.game_combo.setCurrentIndex(selected_game_index)
+
             self.filter_list.clear()
             for filter_definition in self._filters:
                 item = QListWidgetItem(filter_definition.name)
@@ -147,9 +184,22 @@ class FiltersTab(QWidget):
         finally:
             self._loading = False
 
+        self._refresh_game_controls()
         filter_id_to_select = self._selected_filter_id or (self._filters[0].id if self._filters else "")
         self._select_filter(filter_id_to_select)
         self._update_status_label()
+
+    def _refresh_game_controls(self) -> None:
+        current_game = self._current_game()
+        has_game = current_game is not None
+        self.add_button.setEnabled(has_game)
+        self.delete_game_button.setEnabled(bool(current_game is not None and not current_game.built_in))
+        self.game_name_value.setText(current_game.name if current_game is not None else "No game selected.")
+        self.game_help_label.setText(
+            "Select a game first. The filters list below only shows filters for the selected game."
+            if has_game
+            else "Create a game to start organizing filters."
+        )
 
     def _select_filter(self, filter_id: str) -> None:
         self._selected_filter_id = filter_id
@@ -160,6 +210,16 @@ class FiltersTab(QWidget):
                 return
         self._populate_form(None)
 
+    def _handle_game_changed(self, _index: int) -> None:
+        if self._loading:
+            return
+        selected_game_id = str(self.game_combo.currentData() or "")
+        if not selected_game_id:
+            return
+        self._selected_game_id = selected_game_id
+        self._selected_filter_id = ""
+        self.controller.set_active_game_id(selected_game_id)
+
     def _handle_selection_changed(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
         if self._loading:
             return
@@ -167,6 +227,12 @@ class FiltersTab(QWidget):
         self._selected_filter_id = filter_id
         self._populate_form(self._current_filter())
         self._update_status_label()
+
+    def _current_game(self) -> GameDefinition | None:
+        for game_definition in self._games:
+            if game_definition.id == self._selected_game_id:
+                return game_definition
+        return None
 
     def _current_filter(self) -> FilterDefinition | None:
         for filter_definition in self._filters:
@@ -212,6 +278,8 @@ class FiltersTab(QWidget):
         if filter_definition is None:
             return
 
+        metadata = dict(filter_definition.metadata)
+        metadata["game_id"] = self._selected_game_id
         updated_filter = FilterDefinition(
             id=filter_definition.id,
             name=self.name_edit.text().strip() or filter_definition.name,
@@ -227,14 +295,52 @@ class FiltersTab(QWidget):
             threshold=float(self.threshold_spin.value()),
             built_in=filter_definition.built_in,
             description=filter_definition.description,
-            metadata=dict(filter_definition.metadata),
+            metadata=metadata,
         )
         self.controller.save_filter(updated_filter)
         self._selected_filter_id = updated_filter.id
         self.refresh()
 
+    def _add_game(self) -> None:
+        name, accepted = QInputDialog.getText(self, "Add Game", "Game name:")
+        if not accepted:
+            return
+        game_name = name.strip()
+        if not game_name:
+            self._show_error("Game name cannot be empty.")
+            return
+        game_definition = self.controller.create_game(name=game_name)
+        self._selected_game_id = game_definition.id
+        self._selected_filter_id = ""
+        self.refresh()
+
+    def _delete_game(self) -> None:
+        game_definition = self._current_game()
+        if game_definition is None or game_definition.built_in:
+            return
+
+        response = QMessageBox.question(
+            self,
+            "Delete Game",
+            f"Delete '{game_definition.name}' and all of its filters?",
+        )
+        if response != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self.controller.delete_game(game_definition.id)
+        except Exception as exc:
+            self._show_error(str(exc))
+            return
+
+        self._selected_filter_id = ""
+        self.refresh()
+
     def _add_filter(self) -> None:
-        filter_definition = self.controller.create_filter()
+        if not self._selected_game_id:
+            self._show_error("Select a game before adding filters.")
+            return
+        filter_definition = self.controller.create_filter(game_id=self._selected_game_id)
         self._selected_filter_id = filter_definition.id
         self.refresh()
 
@@ -281,6 +387,7 @@ class FiltersTab(QWidget):
 
     def _update_status_label(self) -> None:
         filter_definition = self._current_filter()
+        game_definition = self._current_game()
         if filter_definition is None:
             self.filter_status_label.setText("No filter selected.")
             return
@@ -288,7 +395,7 @@ class FiltersTab(QWidget):
         template_status = next(
             (
                 status
-                for status in self.controller.get_template_statuses()
+                for status in self.controller.get_template_statuses(game_id=self._selected_game_id)
                 if status.filter_id == filter_definition.id
             ),
             None,
@@ -298,6 +405,7 @@ class FiltersTab(QWidget):
             return
 
         lines = [
+            f"Game: {game_definition.name if game_definition is not None else self._selected_game_id}",
             f"ID: {filter_definition.id}",
             f"Event type: {filter_definition.event_type}",
             f"Template status: {template_status.status_label()}",
@@ -346,10 +454,7 @@ class FiltersTab(QWidget):
             self._load_pixmap(preview_path)
 
     def _handle_config_changed(self, _config: dict[str, object]) -> None:
-        selected_filter_id = self._selected_filter_id
         self.refresh()
-        self._selected_filter_id = selected_filter_id
-        self._update_status_label()
 
     def _show_error(self, message: str) -> None:
         QMessageBox.warning(self, "Filters", message)

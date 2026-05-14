@@ -1,6 +1,7 @@
 {
-  "version": 4,
+  "version": 5,
   "last_selected_mode": "filters",
+  "active_game_id": "testgamefilters",
   "encounter_increment": 1,
   "debug": {
     "save_debug_frames": false,
@@ -39,6 +40,14 @@
       ]
     ]
   },
+  "games": [
+    {
+      "id": "testgamefilters",
+      "name": "testgamefilters",
+      "built_in": true,
+      "description": "Default game bucket for migrated and starter filters."
+    }
+  ],
   "filters": [
     {
       "id": "wild",
@@ -55,7 +64,9 @@
       "threshold": 0.85,
       "built_in": true,
       "description": "Encounter-start filter for Safari-style wild battle text.",
-      "metadata": {}
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
     },
     {
       "id": "gotcha",
@@ -72,7 +83,9 @@
       "threshold": 0.85,
       "built_in": true,
       "description": "Catch filter that increments encounter count and catch count.",
-      "metadata": {}
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
     },
     {
       "id": "fled",
@@ -89,7 +102,9 @@
       "threshold": 0.85,
       "built_in": true,
       "description": "Separate fled event filter based on the got away battle result.",
-      "metadata": {}
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
     },
     {
       "id": "huh",
@@ -106,7 +121,9 @@
       "threshold": 0.85,
       "built_in": true,
       "description": "Egg encounter event filter based on the huh prompt.",
-      "metadata": {}
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
     }
   ]
 }

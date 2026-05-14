@@ -29,6 +29,23 @@ FILTER_ID_FLED = "fled"
 FILTER_ID_HUH = "huh"
 
 DEFAULT_FILTER_VERSION = 1
+DEFAULT_GAME_ID = "testgamefilters"
+
+
+@dataclass(frozen=True)
+class GameDefinition:
+    id: str
+    name: str
+    built_in: bool = False
+    description: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "built_in": self.built_in,
+            "description": self.description,
+        }
 
 
 @dataclass(frozen=True)
@@ -72,6 +89,86 @@ def slugify_filter_name(name: str) -> str:
     return normalized or "filter"
 
 
+def slugify_game_name(name: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", name.strip().lower())
+    normalized = normalized.strip("_")
+    return normalized or "game"
+
+
+def build_builtin_games() -> list[GameDefinition]:
+    return [
+        GameDefinition(
+            id=DEFAULT_GAME_ID,
+            name=DEFAULT_GAME_ID,
+            built_in=True,
+            description="Default game bucket for migrated and starter filters.",
+        )
+    ]
+
+
+def normalize_game_definition(
+    raw_game: object,
+    *,
+    fallback_games: dict[str, GameDefinition] | None = None,
+) -> GameDefinition:
+    fallback_map = fallback_games or {game.id: game for game in build_builtin_games()}
+    if not isinstance(raw_game, dict):
+        return build_builtin_games()[0]
+
+    game_id = slugify_game_name(str(raw_game.get("id", DEFAULT_GAME_ID)))
+    fallback = fallback_map.get(game_id)
+    if fallback is None:
+        fallback = GameDefinition(
+            id=game_id,
+            name=str(raw_game.get("name", "New Game")).strip() or "New Game",
+            built_in=False,
+            description="Custom game filter group.",
+        )
+
+    return GameDefinition(
+        id=game_id,
+        name=str(raw_game.get("name", fallback.name)).strip() or fallback.name,
+        built_in=bool(raw_game.get("built_in", fallback.built_in)),
+        description=str(raw_game.get("description", fallback.description)).strip(),
+    )
+
+
+def normalize_game_definitions(raw_games: object) -> list[GameDefinition]:
+    built_ins = build_builtin_games()
+    built_in_map = {game.id: game for game in built_ins}
+
+    if isinstance(raw_games, dict):
+        iterable: Iterable[object] = raw_games.values()
+    elif isinstance(raw_games, list):
+        iterable = raw_games
+    else:
+        return built_ins
+
+    normalized: list[GameDefinition] = []
+    seen_ids: set[str] = set()
+    for raw_game in iterable:
+        game_definition = normalize_game_definition(raw_game, fallback_games=built_in_map)
+        if game_definition.id in seen_ids:
+            continue
+        seen_ids.add(game_definition.id)
+        normalized.append(game_definition)
+
+    for builtin in built_ins:
+        if builtin.id not in seen_ids:
+            normalized.append(builtin)
+
+    return normalized
+
+
+def normalize_game_id(value: object) -> str:
+    normalized = slugify_game_name(str(value or DEFAULT_GAME_ID))
+    return normalized or DEFAULT_GAME_ID
+
+
+def get_filter_game_id(filter_definition: FilterDefinition) -> str:
+    return normalize_game_id(filter_definition.metadata.get("game_id", DEFAULT_GAME_ID))
+
+
 def build_builtin_filters(
     *,
     resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
@@ -101,6 +198,7 @@ def build_builtin_filters(
             threshold=WILD_THRESHOLD,
             built_in=True,
             description="Encounter-start filter for Safari-style wild battle text.",
+            metadata={"game_id": DEFAULT_GAME_ID},
         ),
         FilterDefinition(
             id=FILTER_ID_GOTCHA,
@@ -112,6 +210,7 @@ def build_builtin_filters(
             threshold=GOTCHA_THRESHOLD,
             built_in=True,
             description="Catch filter that increments encounter count and catch count.",
+            metadata={"game_id": DEFAULT_GAME_ID},
         ),
         FilterDefinition(
             id=FILTER_ID_FLED,
@@ -123,6 +222,7 @@ def build_builtin_filters(
             threshold=ESCAPE_THRESHOLD,
             built_in=True,
             description="Separate fled event filter based on the got away battle result.",
+            metadata={"game_id": DEFAULT_GAME_ID},
         ),
         FilterDefinition(
             id=FILTER_ID_HUH,
@@ -134,6 +234,7 @@ def build_builtin_filters(
             threshold=HUH_THRESHOLD,
             built_in=True,
             description="Egg encounter event filter based on the huh prompt.",
+            metadata={"game_id": DEFAULT_GAME_ID},
         ),
     ]
 
@@ -181,6 +282,13 @@ def normalize_filter_definition(
         )
 
     name = str(raw_filter.get("name", fallback.name)).strip() or fallback.name
+    metadata = (
+        dict(raw_filter.get("metadata", fallback.metadata))
+        if isinstance(raw_filter.get("metadata"), dict)
+        else dict(fallback.metadata)
+    )
+    metadata["game_id"] = normalize_game_id(metadata.get("game_id", fallback.metadata.get("game_id", DEFAULT_GAME_ID)))
+
     return FilterDefinition(
         id=filter_id,
         name=name,
@@ -191,7 +299,7 @@ def normalize_filter_definition(
         threshold=float(raw_filter.get("threshold", fallback.threshold)),
         built_in=bool(raw_filter.get("built_in", fallback.built_in)),
         description=str(raw_filter.get("description", fallback.description)).strip(),
-        metadata=dict(raw_filter.get("metadata", fallback.metadata)) if isinstance(raw_filter.get("metadata"), dict) else dict(fallback.metadata),
+        metadata=metadata,
     )
 
 
@@ -251,6 +359,7 @@ def build_legacy_mode_filters(
                 threshold=GOTCHA_THRESHOLD,
                 built_in=True,
                 description="Legacy random grass catch filter.",
+                metadata={"game_id": DEFAULT_GAME_ID},
             ),
             FilterDefinition(
                 id=FILTER_ID_FLED,
@@ -262,6 +371,7 @@ def build_legacy_mode_filters(
                 threshold=ESCAPE_THRESHOLD,
                 built_in=True,
                 description="Legacy random grass fled filter.",
+                metadata={"game_id": DEFAULT_GAME_ID},
             ),
         ]
 
@@ -277,6 +387,7 @@ def build_legacy_mode_filters(
                 threshold=WILD_THRESHOLD,
                 built_in=True,
                 description="Legacy Safari wild filter.",
+                metadata={"game_id": DEFAULT_GAME_ID},
             )
         ]
 
@@ -292,6 +403,7 @@ def build_legacy_mode_filters(
                 threshold=HUH_THRESHOLD,
                 built_in=True,
                 description="Legacy egg filter.",
+                metadata={"game_id": DEFAULT_GAME_ID},
             )
         ]
 

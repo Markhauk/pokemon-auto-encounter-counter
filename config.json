@@ -1,19 +1,20 @@
 {
-  "version": 3,
-  "last_selected_mode": "random_grass",
+  "version": 5,
+  "last_selected_mode": "filters",
+  "active_game_id": "testgamefilters",
   "encounter_increment": 1,
   "debug": {
-    "save_debug_frames": false,
+    "save_debug_frames": true,
     "verbose_debug": false
   },
   "display_setup": {
-    "screen_count": 3,
+    "screen_count": 2,
     "resolution_preset": "1440p",
     "mixed_resolutions": false,
     "layout": [
       [
         0,
-        1,
+        0,
         0
       ],
       [
@@ -39,38 +40,128 @@
       ]
     ]
   },
-  "modes": {
-    "random_grass": {
+  "games": [
+    {
+      "id": "testgamefilters",
+      "name": "testgamefilters",
+      "built_in": true,
+      "description": "Default game bucket for migrated and starter filters."
+    }
+  ],
+  "filters": [
+    {
+      "id": "wild",
+      "name": "Wild",
+      "enabled": false,
+      "event_type": "encounter_start",
+      "template_path": "wild.png",
       "capture_region": {
-        "left": 282,
-        "top": 1060,
-        "width": 935,
-        "height": 132
+        "left": 423,
+        "top": 1602,
+        "width": 364,
+        "height": 171
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Encounter-start filter for Safari-style wild battle text.",
+      "metadata": {
+        "game_id": "testgamefilters"
       }
     },
-    "safari_zone": {
+    {
+      "id": "gotcha",
+      "name": "Gotcha",
+      "enabled": false,
+      "event_type": "catch",
+      "template_path": "gotcha.png",
       "capture_region": {
-        "left": 282,
-        "top": 1068,
-        "width": 243,
-        "height": 114
+        "left": 423,
+        "top": 1590,
+        "width": 1402,
+        "height": 198
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Catch filter that increments encounter count and catch count.",
+      "metadata": {
+        "game_id": "testgamefilters"
       }
     },
-    "egg_mode": {
+    {
+      "id": "fled",
+      "name": "Fled",
+      "enabled": false,
+      "event_type": "fled",
+      "template_path": "got_away.png",
       "capture_region": {
-        "left": 260,
-        "top": 1040,
-        "width": 420,
-        "height": 120
+        "left": 423,
+        "top": 1590,
+        "width": 1402,
+        "height": 198
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Separate fled event filter based on the got away battle result.",
+      "metadata": {
+        "game_id": "testgamefilters"
       }
     },
-    "soft_reset": {
+    {
+      "id": "huh",
+      "name": "Huh",
+      "enabled": false,
+      "event_type": "encounter_start",
+      "template_path": "huh.png",
+      "capture_region": {
+        "left": 390,
+        "top": 1560,
+        "width": 630,
+        "height": 180
+      },
+      "threshold": 0.85,
+      "built_in": true,
+      "description": "Egg encounter event filter based on the huh prompt.",
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
+    },
+    {
+      "id": "new_filter_5",
+      "name": "Fullscreen",
+      "enabled": true,
+      "event_type": "label",
+      "template_path": "new_filter_5.png",
       "capture_region": {
         "left": 0,
         "top": 0,
-        "width": 0,
-        "height": 0
+        "width": 2560,
+        "height": 1440
+      },
+      "threshold": 0.85,
+      "built_in": false,
+      "description": "Custom filter.",
+      "metadata": {
+        "game_id": "testgamefilters"
+      }
+    },
+    {
+      "id": "new_filter_6",
+      "name": "Fullscreen2",
+      "enabled": true,
+      "event_type": "info",
+      "template_path": "new_filter_6.png",
+      "capture_region": {
+        "left": 0,
+        "top": 0,
+        "width": 2560,
+        "height": 1440
+      },
+      "threshold": 0.85,
+      "built_in": false,
+      "description": "Custom filter.",
+      "metadata": {
+        "game_id": "testgamefilters"
       }
     }
-  }
+  ]
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -36,10 +37,12 @@ class DashboardTab(QWidget):
 
     def _build_ui(self) -> None:
         root_layout = QVBoxLayout(self)
+        self._loading = False
 
         controls_group = QGroupBox("Scanner Controls")
         controls_layout = QGridLayout(controls_group)
 
+        self.game_combo = QComboBox()
         self.increment_spin = QSpinBox()
         self.increment_spin.setRange(1, 9999)
         self.save_debug_checkbox = QCheckBox("Save last capture while running")
@@ -51,15 +54,17 @@ class DashboardTab(QWidget):
         self.setup_summary_label.setWordWrap(True)
         self.setup_summary_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        controls_layout.addWidget(QLabel("Encounter increment"), 0, 0)
-        controls_layout.addWidget(self.increment_spin, 0, 1)
-        controls_layout.addWidget(self.start_button, 0, 2)
-        controls_layout.addWidget(self.stop_button, 0, 3)
+        controls_layout.addWidget(QLabel("Game"), 0, 0)
+        controls_layout.addWidget(self.game_combo, 0, 1)
+        controls_layout.addWidget(QLabel("Encounter increment"), 0, 2)
+        controls_layout.addWidget(self.increment_spin, 0, 3)
+        controls_layout.addWidget(self.start_button, 0, 4)
+        controls_layout.addWidget(self.stop_button, 0, 5)
         controls_layout.addWidget(QLabel("Status"), 1, 0)
         controls_layout.addWidget(self.status_value, 1, 1)
-        controls_layout.addWidget(self.save_debug_checkbox, 1, 2)
-        controls_layout.addWidget(self.verbose_debug_checkbox, 1, 3)
-        controls_layout.addWidget(self.setup_summary_label, 2, 0, 1, 4)
+        controls_layout.addWidget(self.save_debug_checkbox, 1, 4)
+        controls_layout.addWidget(self.verbose_debug_checkbox, 1, 5)
+        controls_layout.addWidget(self.setup_summary_label, 2, 0, 1, 6)
 
         summary_row = QHBoxLayout()
 
@@ -76,6 +81,7 @@ class DashboardTab(QWidget):
 
         details_group = QGroupBox("Live Details")
         details_layout = QFormLayout(details_group)
+        self.active_game_value = QLabel("N/A")
         self.enabled_filters_value = QLabel("0")
         self.last_event_value = QLabel("none")
         self.last_event_at_value = QLabel("N/A")
@@ -85,6 +91,7 @@ class DashboardTab(QWidget):
         self.capture_region_value = QLabel("N/A")
         self.capture_region_value.setWordWrap(True)
 
+        details_layout.addRow("Active game", self.active_game_value)
         details_layout.addRow("Enabled filters", self.enabled_filters_value)
         details_layout.addRow("Last event", self.last_event_value)
         details_layout.addRow("Last event time", self.last_event_at_value)
@@ -110,6 +117,7 @@ class DashboardTab(QWidget):
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_scan)
         self.stop_button.clicked.connect(self.controller.stop_scan)
+        self.game_combo.currentIndexChanged.connect(self._handle_game_changed)
 
         self.controller.snapshot_changed.connect(self._apply_snapshot)
         self.controller.runtime_status_changed.connect(self._apply_runtime_status)
@@ -119,6 +127,7 @@ class DashboardTab(QWidget):
 
     def _load_initial_state(self) -> None:
         config = self.controller.get_config()
+        self._refresh_game_selector()
         self.increment_spin.setValue(int(config.get("encounter_increment", 1)))
         debug = config.get("debug", {})
         if isinstance(debug, dict):
@@ -145,11 +154,13 @@ class DashboardTab(QWidget):
 
     def _refresh_setup_summary(self) -> None:
         display_setup = self.controller.get_display_setup()
-        filters = self.controller.get_filters()
+        active_game_id = self.controller.get_active_game_id()
+        active_game = self.controller.get_game(active_game_id)
+        filters = self.controller.get_filters(game_id=active_game_id)
         enabled_filters = [filter_definition for filter_definition in filters if filter_definition.enabled]
         missing_templates = [
             status.filter_name
-            for status in self.controller.get_template_statuses()
+            for status in self.controller.get_template_statuses(game_id=active_game_id)
             if status.status_label() != "Found"
         ]
 
@@ -158,6 +169,7 @@ class DashboardTab(QWidget):
         capture_resolution_preset = get_capture_resolution_preset(display_setup)
 
         lines = [
+            f"Active game: {active_game.name if active_game is not None else active_game_id}",
             f"Enabled filters: {len(enabled_filters)} of {len(filters)}",
             f"Capture monitor cell: {capture_label}",
             f"Capture monitor resolution: {capture_resolution_preset.upper()} ({get_resolution_label(capture_resolution_preset)})",
@@ -179,6 +191,7 @@ class DashboardTab(QWidget):
         self._update_button_state()
 
     def _apply_snapshot(self, snapshot: dict[str, object]) -> None:
+        self.active_game_value.setText(str(snapshot.get("active_game_name", "N/A") or "N/A"))
         self.encounter_value.setText(str(snapshot.get("counter", 0)))
         self.catch_value.setText(str(snapshot.get("catch_counter", 0)))
         self.since_catch_value.setText(str(snapshot.get("encounters_since_last_catch", 0)))
@@ -202,15 +215,32 @@ class DashboardTab(QWidget):
 
     def _update_button_state(self) -> None:
         running = self.controller.is_running()
-        filters = self.controller.get_filters()
+        filters = self.controller.get_filters(game_id=self.controller.get_active_game_id())
         enabled_filters = [filter_definition for filter_definition in filters if filter_definition.enabled]
         can_start = bool(enabled_filters) and not running
 
         self.start_button.setEnabled(can_start)
         self.stop_button.setEnabled(running)
+        self.game_combo.setEnabled(not running)
         self.increment_spin.setEnabled(not running)
         self.save_debug_checkbox.setEnabled(not running)
         self.verbose_debug_checkbox.setEnabled(not running)
+
+    def _refresh_game_selector(self) -> None:
+        active_game_id = self.controller.get_active_game_id()
+        games = self.controller.get_games()
+
+        self._loading = True
+        try:
+            self.game_combo.clear()
+            for game_definition in games:
+                self.game_combo.addItem(game_definition.name, game_definition.id)
+
+            selected_index = self.game_combo.findData(active_game_id)
+            if selected_index >= 0:
+                self.game_combo.setCurrentIndex(selected_index)
+        finally:
+            self._loading = False
 
     def _append_log_message(self, payload: dict[str, object]) -> None:
         timestamp = str(payload.get("timestamp", ""))
@@ -225,10 +255,18 @@ class DashboardTab(QWidget):
             verbose_debug=self.verbose_debug_checkbox.isChecked(),
         )
 
+    def _handle_game_changed(self, _index: int) -> None:
+        if self._loading or self.controller.is_running():
+            return
+        selected_game_id = str(self.game_combo.currentData() or "")
+        if selected_game_id:
+            self.controller.set_active_game_id(selected_game_id)
+
     def _show_error(self, message: str) -> None:
         QMessageBox.warning(self, "Encounter Counter", message)
 
     def _handle_config_changed(self, config: dict[str, object]) -> None:
+        self._refresh_game_selector()
         debug = config.get("debug", {})
         if isinstance(debug, dict) and not self.controller.is_running():
             self.save_debug_checkbox.setChecked(bool(debug.get("save_debug_frames", False)))
