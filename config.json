@@ -1,10 +1,10 @@
 {
-  "version": 5,
+  "version": 6,
   "last_selected_mode": "filters",
   "active_game_id": "testgamefilters",
   "encounter_increment": 1,
   "debug": {
-    "save_debug_frames": true,
+    "save_debug_frames": false,
     "verbose_debug": false
   },
   "display_setup": {
@@ -62,6 +62,7 @@
         "height": 171
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Encounter-start filter for Safari-style wild battle text.",
       "metadata": {
@@ -81,6 +82,7 @@
         "height": 198
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Catch filter that increments encounter count and catch count.",
       "metadata": {
@@ -100,6 +102,7 @@
         "height": 198
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Separate fled event filter based on the got away battle result.",
       "metadata": {
@@ -119,6 +122,7 @@
         "height": 180
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Egg encounter event filter based on the huh prompt.",
       "metadata": {
@@ -138,6 +142,7 @@
         "height": 1440
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": false,
       "description": "Custom filter.",
       "metadata": {
@@ -157,6 +162,7 @@
         "height": 1440
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": false,
       "description": "Custom filter.",
       "metadata": {

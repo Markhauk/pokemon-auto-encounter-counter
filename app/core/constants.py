@@ -24,6 +24,7 @@ EVENT_LOG_CSV_FIELDS = [
     "filter_name",
     "filter_event_type",
     "filter_threshold",
+    "filter_cooldown_seconds",
     "template_path",
     "active_label",
     "counter",

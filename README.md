@@ -25,6 +25,7 @@ What that means:
 - Template matching with `OpenCV`
 - Start and stop scanning from the GUI
 - Per-mode encounter increment setting
+- Per-filter cooldown setting
 - Per-mode capture region settings stored in `config.json`
 - Live counter and runtime status updates
 - Test screenshot workflow with preview

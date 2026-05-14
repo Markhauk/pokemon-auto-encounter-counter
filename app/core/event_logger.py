@@ -105,6 +105,7 @@ class EventLogger:
             "filter_name": str(payload.get("filter_name", "")),
             "filter_event_type": str(payload.get("filter_event_type", "")),
             "filter_threshold": round(float(payload.get("filter_threshold", 0.0)), 6),
+            "filter_cooldown_seconds": round(float(payload.get("filter_cooldown_seconds", 0.0)), 6),
             "template_path": str(payload.get("template_path", "")),
             "active_label": str(payload.get("active_label", "")),
             "counter": int(payload.get("counter", 0)),

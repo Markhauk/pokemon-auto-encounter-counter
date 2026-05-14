@@ -282,6 +282,7 @@ class AppController(QObject):
                     template_path=filter_definition.template_path,
                     capture_region=absolute_region,
                     threshold=filter_definition.threshold,
+                    cooldown_seconds=filter_definition.cooldown_seconds,
                     built_in=filter_definition.built_in,
                     description=filter_definition.description,
                     metadata=dict(filter_definition.metadata),

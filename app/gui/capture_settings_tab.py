@@ -180,6 +180,7 @@ class CaptureSettingsTab(QWidget):
                         to_preset=new_capture_resolution_preset,
                     ),
                     threshold=filter_definition.threshold,
+                    cooldown_seconds=filter_definition.cooldown_seconds,
                     built_in=filter_definition.built_in,
                     description=filter_definition.description,
                     metadata=dict(filter_definition.metadata),

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.constants import POST_DETECTION_COOLDOWN_SECONDS
 from app.core.filters import FilterDefinition, GameDefinition
 from app.services.app_controller import AppController
 
@@ -90,6 +91,10 @@ class FiltersTab(QWidget):
         self.threshold_spin.setRange(0.01, 1.0)
         self.threshold_spin.setDecimals(3)
         self.threshold_spin.setSingleStep(0.01)
+        self.cooldown_spin = QDoubleSpinBox()
+        self.cooldown_spin.setRange(0.0, 3600.0)
+        self.cooldown_spin.setDecimals(1)
+        self.cooldown_spin.setSingleStep(0.5)
 
         self.region_left_spin = QSpinBox()
         self.region_top_spin = QSpinBox()
@@ -106,6 +111,7 @@ class FiltersTab(QWidget):
         form.addRow("Event type", self.event_type_combo)
         form.addRow("Template path", self.template_path_edit)
         form.addRow("Threshold", self.threshold_spin)
+        form.addRow("Cooldown (seconds)", self.cooldown_spin)
         form.addRow("Region left", self.region_left_spin)
         form.addRow("Region top", self.region_top_spin)
         form.addRow("Region width", self.region_width_spin)
@@ -248,6 +254,7 @@ class FiltersTab(QWidget):
                 self.name_edit.clear()
                 self.template_path_edit.clear()
                 self.threshold_spin.setValue(0.85)
+                self.cooldown_spin.setValue(POST_DETECTION_COOLDOWN_SECONDS)
                 self.region_left_spin.setValue(0)
                 self.region_top_spin.setValue(0)
                 self.region_width_spin.setValue(1)
@@ -260,6 +267,7 @@ class FiltersTab(QWidget):
             self.name_edit.setText(filter_definition.name)
             self.template_path_edit.setText(filter_definition.template_path)
             self.threshold_spin.setValue(filter_definition.threshold)
+            self.cooldown_spin.setValue(filter_definition.cooldown_seconds)
             event_index = self.event_type_combo.findData(filter_definition.event_type)
             if event_index >= 0:
                 self.event_type_combo.setCurrentIndex(event_index)
@@ -293,6 +301,7 @@ class FiltersTab(QWidget):
                 "height": self.region_height_spin.value(),
             },
             threshold=float(self.threshold_spin.value()),
+            cooldown_seconds=float(self.cooldown_spin.value()),
             built_in=filter_definition.built_in,
             description=filter_definition.description,
             metadata=metadata,
@@ -408,6 +417,7 @@ class FiltersTab(QWidget):
             f"Game: {game_definition.name if game_definition is not None else self._selected_game_id}",
             f"ID: {filter_definition.id}",
             f"Event type: {filter_definition.event_type}",
+            f"Cooldown: {filter_definition.cooldown_seconds:.1f}s",
             f"Template status: {template_status.status_label()}",
             f"Template path: {template_status.path}",
         ]

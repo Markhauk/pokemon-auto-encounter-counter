@@ -4,7 +4,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from .constants import ESCAPE_THRESHOLD, GOTCHA_THRESHOLD, HUH_THRESHOLD, WILD_THRESHOLD
+from .constants import (
+    ESCAPE_THRESHOLD,
+    GOTCHA_THRESHOLD,
+    HUH_THRESHOLD,
+    POST_DETECTION_COOLDOWN_SECONDS,
+    WILD_THRESHOLD,
+)
 from .display import DEFAULT_RESOLUTION_PRESET
 from .modes import get_default_capture_region
 
@@ -57,6 +63,7 @@ class FilterDefinition:
     template_path: str
     capture_region: dict[str, int]
     threshold: float
+    cooldown_seconds: float = POST_DETECTION_COOLDOWN_SECONDS
     built_in: bool = False
     description: str = ""
     metadata: dict[str, object] = field(default_factory=dict)
@@ -70,6 +77,7 @@ class FilterDefinition:
             "template_path": self.template_path,
             "capture_region": dict(self.capture_region),
             "threshold": float(self.threshold),
+            "cooldown_seconds": float(self.cooldown_seconds),
             "built_in": self.built_in,
             "description": self.description,
             "metadata": dict(self.metadata),
@@ -169,6 +177,14 @@ def get_filter_game_id(filter_definition: FilterDefinition) -> str:
     return normalize_game_id(filter_definition.metadata.get("game_id", DEFAULT_GAME_ID))
 
 
+def normalize_cooldown_seconds(value: object) -> float:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return POST_DETECTION_COOLDOWN_SECONDS
+    return max(0.0, normalized)
+
+
 def build_builtin_filters(
     *,
     resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
@@ -196,6 +212,7 @@ def build_builtin_filters(
             template_path="wild.png",
             capture_region=_region("safari_zone"),
             threshold=WILD_THRESHOLD,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=True,
             description="Encounter-start filter for Safari-style wild battle text.",
             metadata={"game_id": DEFAULT_GAME_ID},
@@ -208,6 +225,7 @@ def build_builtin_filters(
             template_path="gotcha.png",
             capture_region=_region("random_grass"),
             threshold=GOTCHA_THRESHOLD,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=True,
             description="Catch filter that increments encounter count and catch count.",
             metadata={"game_id": DEFAULT_GAME_ID},
@@ -220,6 +238,7 @@ def build_builtin_filters(
             template_path="got_away.png",
             capture_region=_region("random_grass"),
             threshold=ESCAPE_THRESHOLD,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=True,
             description="Separate fled event filter based on the got away battle result.",
             metadata={"game_id": DEFAULT_GAME_ID},
@@ -232,6 +251,7 @@ def build_builtin_filters(
             template_path="huh.png",
             capture_region=_region("egg_mode"),
             threshold=HUH_THRESHOLD,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=True,
             description="Egg encounter event filter based on the huh prompt.",
             metadata={"game_id": DEFAULT_GAME_ID},
@@ -277,6 +297,7 @@ def normalize_filter_definition(
                 "height": 100,
             },
             threshold=0.85,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=False,
             description="Custom template filter.",
         )
@@ -297,6 +318,7 @@ def normalize_filter_definition(
         template_path=str(raw_filter.get("template_path", fallback.template_path)).strip() or fallback.template_path,
         capture_region=_normalize_region(raw_filter.get("capture_region", fallback.capture_region)),
         threshold=float(raw_filter.get("threshold", fallback.threshold)),
+        cooldown_seconds=normalize_cooldown_seconds(raw_filter.get("cooldown_seconds", fallback.cooldown_seconds)),
         built_in=bool(raw_filter.get("built_in", fallback.built_in)),
         description=str(raw_filter.get("description", fallback.description)).strip(),
         metadata=metadata,
@@ -357,6 +379,7 @@ def build_legacy_mode_filters(
                 template_path="gotcha.png",
                 capture_region=dict(capture_region),
                 threshold=GOTCHA_THRESHOLD,
+                cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
                 built_in=True,
                 description="Legacy random grass catch filter.",
                 metadata={"game_id": DEFAULT_GAME_ID},
@@ -369,6 +392,7 @@ def build_legacy_mode_filters(
                 template_path="got_away.png",
                 capture_region=dict(capture_region),
                 threshold=ESCAPE_THRESHOLD,
+                cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
                 built_in=True,
                 description="Legacy random grass fled filter.",
                 metadata={"game_id": DEFAULT_GAME_ID},
@@ -385,6 +409,7 @@ def build_legacy_mode_filters(
                 template_path="wild.png",
                 capture_region=dict(capture_region),
                 threshold=WILD_THRESHOLD,
+                cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
                 built_in=True,
                 description="Legacy Safari wild filter.",
                 metadata={"game_id": DEFAULT_GAME_ID},
@@ -401,6 +426,7 @@ def build_legacy_mode_filters(
                 template_path="huh.png",
                 capture_region=dict(capture_region),
                 threshold=HUH_THRESHOLD,
+                cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
                 built_in=True,
                 description="Legacy egg filter.",
                 metadata={"game_id": DEFAULT_GAME_ID},

@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 
+from app.core.constants import POST_DETECTION_COOLDOWN_SECONDS
 from app.core.display import (
     build_default_display_setup,
     get_capture_resolution_preset,
@@ -30,7 +31,7 @@ def build_default_config() -> dict[str, object]:
     display_setup = build_default_display_setup()
     resolution_preset = get_capture_resolution_preset(display_setup)
     return {
-        "version": 5,
+        "version": 6,
         "last_selected_mode": "filters",
         "active_game_id": DEFAULT_GAME_ID,
         "encounter_increment": 1,
@@ -68,7 +69,7 @@ class ConfigService:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        config["version"] = 5
+        config["version"] = 6
         config["display_setup"] = normalize_display_setup(config.get("display_setup"))
         resolution_preset = get_capture_resolution_preset(config["display_setup"])  # type: ignore[arg-type]
         config["games"] = [
@@ -205,6 +206,7 @@ class ConfigService:
                     template_path=filter_definition.template_path,
                     capture_region=dict(capture_region),
                     threshold=filter_definition.threshold,
+                    cooldown_seconds=filter_definition.cooldown_seconds,
                     built_in=filter_definition.built_in,
                     description=filter_definition.description,
                     metadata=dict(filter_definition.metadata),
@@ -379,6 +381,7 @@ class ConfigService:
             template_path=f"{filter_id}.png",
             capture_region=get_default_capture_region("random_grass", resolution_preset=resolution_preset),
             threshold=0.85,
+            cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=False,
             description="Custom filter.",
             metadata={"game_id": target_game_id},

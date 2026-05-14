@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "last_selected_mode": "filters",
   "active_game_id": "testgamefilters",
   "encounter_increment": 1,
@@ -62,6 +62,7 @@
         "height": 114
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Encounter-start filter for Safari-style wild battle text.",
       "metadata": {
@@ -81,6 +82,7 @@
         "height": 132
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Catch filter that increments encounter count and catch count.",
       "metadata": {
@@ -100,6 +102,7 @@
         "height": 132
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Separate fled event filter based on the got away battle result.",
       "metadata": {
@@ -119,6 +122,7 @@
         "height": 120
       },
       "threshold": 0.85,
+      "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Egg encounter event filter based on the huh prompt.",
       "metadata": {

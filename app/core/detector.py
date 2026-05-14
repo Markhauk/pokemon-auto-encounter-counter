@@ -12,7 +12,6 @@ from .constants import (
     BLACK_FRAME_WARNING_COOLDOWN_SECONDS,
     DEBUG_SAVE_EVERY_N_FRAMES,
     MATCH_LOG_EVERY_N_FRAMES,
-    POST_DETECTION_COOLDOWN_SECONDS,
     PREVIEW_MATCH_THRESHOLD,
     SAVE_DEBUG_FRAMES,
     SCAN_INTERVAL_SECONDS,
@@ -235,6 +234,7 @@ class EncounterCounterEngine:
             "filter_name": filter_definition.name,
             "filter_event_type": filter_definition.event_type,
             "filter_threshold": filter_definition.threshold,
+            "filter_cooldown_seconds": filter_definition.cooldown_seconds,
             "template_path": str(self.template_manager.get_path(filter_definition.template_path)),
             "active_label": self.active_label,
             "counter": self.counter,
@@ -292,13 +292,14 @@ class EncounterCounterEngine:
     def in_cooldown(self, filter_id: str) -> bool:
         return time.time() < self._runtime_state_for(filter_id).cooldown_until
 
-    def start_cooldown(self, filter_id: str) -> None:
-        runtime_state = self._runtime_state_for(filter_id)
-        runtime_state.cooldown_until = time.time() + POST_DETECTION_COOLDOWN_SECONDS
+    def start_cooldown(self, filter_definition: FilterDefinition) -> None:
+        runtime_state = self._runtime_state_for(filter_definition.id)
+        cooldown_seconds = max(0.0, float(filter_definition.cooldown_seconds))
+        runtime_state.cooldown_until = time.time() + cooldown_seconds
         runtime_state.waiting_for_clear = True
         self.save_state(status="Running")
         self.log_debug(
-            f"[{filter_id}] Cooldown started for {POST_DETECTION_COOLDOWN_SECONDS:.1f} seconds."
+            f"[{filter_definition.id}] Cooldown started for {cooldown_seconds:.1f} seconds."
         )
 
     def _calculate_encounters_since_last_catch(self) -> int:
@@ -386,7 +387,7 @@ class EncounterCounterEngine:
 
         if match_result.found:
             self.record_filter_event(filter_definition, match_result.score)
-            self.start_cooldown(filter_definition.id)
+            self.start_cooldown(filter_definition)
 
     def run(
         self,
