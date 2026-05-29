@@ -9,6 +9,11 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
+
 [project.scripts]
 pokemon-encounter-counter-cli = "run:main"
 pokemon-encounter-counter-gui = "app.main:main"

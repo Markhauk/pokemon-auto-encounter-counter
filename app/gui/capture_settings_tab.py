@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -30,7 +31,7 @@ class CaptureSettingsTab(QWidget):
         self._load_from_config()
 
     def _build_ui(self) -> None:
-        root_layout = QHBoxLayout(self)
+        self.root_layout = QHBoxLayout(self)
 
         left_panel = QVBoxLayout()
         right_panel = QVBoxLayout()
@@ -60,26 +61,28 @@ class CaptureSettingsTab(QWidget):
 
         display_layout.addWidget(self.display_help_label)
         display_layout.addWidget(self.monitor_count_label)
-        display_layout.addWidget(self.monitor_layout_widget)
         display_layout.addWidget(self.layout_status_label)
         display_layout.addLayout(button_row)
+        display_layout.addWidget(self.monitor_layout_widget)
+        display_layout.addStretch(1)
 
         preview_group = QGroupBox("Last Preview")
         preview_layout = QVBoxLayout(preview_group)
         self.preview_label = QLabel("Use the Filters tab to capture a preview for a selected filter.")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setMinimumSize(420, 240)
+        self.preview_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.preview_label.setStyleSheet("border: 1px solid #666;")
         self.preview_info = QLabel("No preview available.")
         self.preview_info.setWordWrap(True)
-        preview_layout.addWidget(self.preview_label)
+        preview_layout.addWidget(self.preview_label, 1)
         preview_layout.addWidget(self.preview_info)
 
         left_panel.addWidget(display_group, 1)
         right_panel.addWidget(preview_group, 1)
 
-        root_layout.addLayout(left_panel, 2)
-        root_layout.addLayout(right_panel, 1)
+        self.root_layout.addLayout(left_panel, 2)
+        self.root_layout.addLayout(right_panel, 1)
 
     def _connect_signals(self) -> None:
         self.save_button.clicked.connect(self._save_display_setup)
@@ -135,6 +138,7 @@ class CaptureSettingsTab(QWidget):
 
         monitor_count = len(physical_monitors)
         self.monitor_count_label.setText(f"Windows detected {monitor_count} monitor(s).")
+        self._apply_monitor_layout_profile(monitor_count)
 
         if not physical_monitors:
             self.layout_status_label.setText("No monitors were detected by Windows.")
@@ -152,6 +156,27 @@ class CaptureSettingsTab(QWidget):
             lines.append(f"{prefix}{format_monitor_summary(monitor)}")
 
         self.layout_status_label.setText("\n".join(lines))
+
+    def _apply_monitor_layout_profile(self, monitor_count: int) -> None:
+        left_stretch, right_stretch, preview_min_height, preview_max_height = self._preview_profile(monitor_count)
+        self.root_layout.setStretch(0, left_stretch)
+        self.root_layout.setStretch(1, right_stretch)
+        self.preview_label.setMinimumHeight(preview_min_height)
+        self.preview_label.setMaximumHeight(preview_max_height)
+        preview_path = Path(self.controller.get_debug_frame_path())
+        if preview_path.exists():
+            self._load_pixmap(preview_path)
+
+    def _preview_profile(self, monitor_count: int) -> tuple[int, int, int, int]:
+        if monitor_count <= 1:
+            return (4, 3, 420, 1200)
+        if monitor_count == 2:
+            return (4, 3, 420, 1100)
+        if monitor_count == 3:
+            return (5, 3, 400, 960)
+        if monitor_count == 4:
+            return (2, 1, 380, 840)
+        return (2, 1, 360, 760)
 
     def _save_display_setup(self) -> None:
         self.controller.save_capture_settings(display_setup=self._current_display_setup())

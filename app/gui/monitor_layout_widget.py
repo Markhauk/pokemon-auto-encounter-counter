@@ -1,7 +1,16 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QButtonGroup, QFrame, QGridLayout, QLabel, QRadioButton, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QRadioButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.core.display import normalize_display_setup
 
@@ -16,7 +25,8 @@ class MonitorCardWidget(QFrame):
 
     def _build_ui(self) -> None:
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setMinimumSize(240, 140)
+        self.setMinimumSize(220, 140)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -51,7 +61,6 @@ class MonitorCardWidget(QFrame):
 
         layout.addWidget(self.title_label)
         layout.addWidget(self.summary_label)
-        layout.addStretch(1)
         layout.addWidget(self.status_label)
         layout.addWidget(self.capture_radio)
 
@@ -125,7 +134,7 @@ class MonitorLayoutWidget(QWidget):
     def _build_ui(self) -> None:
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(0)
+        root_layout.setSpacing(8)
 
         self.empty_label = QLabel("No monitors detected.")
         self.empty_label.setWordWrap(True)
@@ -134,9 +143,11 @@ class MonitorLayoutWidget(QWidget):
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setHorizontalSpacing(12)
         self.grid_layout.setVerticalSpacing(12)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
 
         root_layout.addWidget(self.empty_label)
         root_layout.addLayout(self.grid_layout)
+        root_layout.addStretch(1)
 
     def value(self) -> dict[str, object]:
         return normalize_display_setup(self._display_setup, physical_monitors=self._physical_monitors)
@@ -162,6 +173,7 @@ class MonitorLayoutWidget(QWidget):
     def _refresh_ui(self, *, emit: bool = False) -> None:
         self._display_setup = normalize_display_setup(self._display_setup, physical_monitors=self._physical_monitors)
         selected_monitor_index = int(self._display_setup["capture_monitor_index"])
+        columns, minimum_width, maximum_width, card_height = self._layout_profile(len(self._physical_monitors))
 
         while self.grid_layout.count():
             item = self.grid_layout.takeAt(0)
@@ -179,13 +191,17 @@ class MonitorLayoutWidget(QWidget):
                 card = MonitorCardWidget(int(monitor["index"]))
                 card.capture_requested.connect(self._handle_capture_requested)
                 self._capture_group.addButton(card.capture_radio)
+                card.setMinimumWidth(minimum_width)
+                card.setMaximumWidth(maximum_width)
+                card.setMinimumHeight(card_height)
+                card.setMaximumHeight(card_height)
                 card.set_state(
                     monitor=monitor,
                     selected=int(monitor["index"]) == selected_monitor_index,
                 )
                 self._cards[int(monitor["index"])] = card
-                row = position // 2
-                column = position % 2
+                row = position // columns
+                column = position % columns
                 self.grid_layout.addWidget(card, row, column)
         finally:
             self._suspend_events = False
@@ -193,3 +209,14 @@ class MonitorLayoutWidget(QWidget):
         self.empty_label.setVisible(not self._physical_monitors)
         if emit:
             self.value_changed.emit(self.value())
+
+    def _layout_profile(self, monitor_count: int) -> tuple[int, int, int, int]:
+        if monitor_count <= 1:
+            return (1, 300, 540, 176)
+        if monitor_count == 2:
+            return (2, 260, 420, 188)
+        if monitor_count == 3:
+            return (3, 220, 320, 176)
+        if monitor_count == 4:
+            return (2, 240, 360, 176)
+        return (3, 220, 300, 168)

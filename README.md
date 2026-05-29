@@ -184,6 +184,12 @@ uv sync
 
 This installs the dependencies into the local virtual environment.
 
+You can also launch the app through the helper script:
+
+```powershell
+.\start.ps1
+```
+
 ## Quick Start
 
 1. Open **Windows PowerShell**.
@@ -193,17 +199,13 @@ This installs the dependencies into the local virtual environment.
 cd <repo-root>
 ```
 
-3. Install dependencies:
+3. Launch the desktop app:
 
 ```powershell
-uv sync
+.\start.ps1
 ```
 
-4. Launch the desktop app:
-
-```powershell
-.\.venv\Scripts\python -m app.main
-```
+If the local virtual environment does not exist yet, the script runs `uv sync` first.
 
 ## Run the Desktop App
 
@@ -211,7 +213,19 @@ From the project root in **Windows PowerShell**:
 
 ```powershell
 cd <repo-root>
-.\.venv\Scripts\python -m app.main
+.\start.ps1
+```
+
+To force a dependency refresh before launch:
+
+```powershell
+.\start.ps1 -Sync
+```
+
+The script also supports the older terminal flow:
+
+```powershell
+.\start.ps1 -Cli
 ```
 
 ## Run the CLI Version
@@ -330,14 +344,32 @@ Adding a new mode should mainly involve:
 
 ## Packaging Direction
 
-The application is structured with future Windows packaging in mind.
+The application can be packaged as a Windows desktop app with `PyInstaller`.
 
-Target direction:
+Install the build dependency:
 
-- packaged desktop executable via `PyInstaller`
-- bundled templates
-- bundled output folder
-- bundled `config.json`
+```powershell
+uv sync --extra build
+```
+
+Build the packaged app:
+
+```powershell
+uv run --extra build pyinstaller pokemon-encounter-counter.spec --noconfirm
+```
+
+The packaged output is written to:
+
+```text
+dist/PokemonEncounterCounter/
+```
+
+Notes:
+
+- the build uses a one-folder layout so bundled templates live next to the executable
+- built-in templates are bundled automatically
+- `output/` is created on first run
+- `config.json` is created on first run if it does not already exist
 
 ## License
 
