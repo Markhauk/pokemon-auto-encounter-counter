@@ -11,9 +11,9 @@ from PySide6.QtCore import QObject, QThread, Signal
 from app.core.capture import compute_brightness_stats, get_monitors, get_physical_monitors, grab_region, save_image
 from app.core.display import (
     build_absolute_capture_region,
-    build_monitor_cell_mapping,
     format_monitor_summary,
     normalize_display_setup,
+    resolve_capture_monitor,
 )
 from app.core.event_logger import EventLogger
 from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition, GameDefinition
@@ -147,14 +147,19 @@ class AppController(QObject):
     def get_physical_monitors(self) -> list[dict[str, int]]:
         return get_physical_monitors()
 
-    def get_monitor_cell_mapping(
+    def get_selected_capture_monitor(
         self,
         *,
         display_setup: Optional[dict[str, object]] = None,
-    ) -> dict[tuple[int, int], dict[str, int]]:
-        return build_monitor_cell_mapping(
-            display_setup=display_setup or self.get_display_setup(),
-            physical_monitors=self.get_physical_monitors(),
+    ) -> dict[str, int]:
+        physical_monitors = self.get_physical_monitors()
+        active_display_setup = normalize_display_setup(
+            display_setup if display_setup is not None else self.get_display_setup(),
+            physical_monitors=physical_monitors,
+        )
+        return resolve_capture_monitor(
+            display_setup=active_display_setup,
+            physical_monitors=physical_monitors,
         )
 
     def capture_test_screenshot(
@@ -163,17 +168,17 @@ class AppController(QObject):
         filter_definition: FilterDefinition,
         display_setup: Optional[dict[str, object]] = None,
     ) -> dict[str, object]:
-        active_display_setup = normalize_display_setup(display_setup or self.get_display_setup())
         physical_monitors = self.get_physical_monitors()
+        active_display_setup = normalize_display_setup(
+            display_setup if display_setup is not None else self.get_display_setup(),
+            physical_monitors=physical_monitors,
+        )
         absolute_region = build_absolute_capture_region(
             relative_region=filter_definition.capture_region,
             display_setup=active_display_setup,
             physical_monitors=physical_monitors,
         )
-        capture_cell = active_display_setup["capture_cell"]
-        selected_monitor = self.get_monitor_cell_mapping(display_setup=active_display_setup)[
-            (int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
-        ]
+        selected_monitor = self.get_selected_capture_monitor(display_setup=active_display_setup)
 
         frame_bgr = grab_region(absolute_region)
         save_image(DEBUG_FRAME_FILE, frame_bgr)

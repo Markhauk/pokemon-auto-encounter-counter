@@ -4,11 +4,12 @@ import copy
 import json
 from pathlib import Path
 
+from app.core.capture import get_physical_monitors
 from app.core.constants import POST_DETECTION_COOLDOWN_SECONDS
 from app.core.display import (
     build_default_display_setup,
-    get_capture_resolution_preset,
     normalize_display_setup,
+    resolve_capture_monitor,
 )
 from app.core.filters import (
     DEFAULT_GAME_ID,
@@ -27,11 +28,36 @@ from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
 
 
+def _read_physical_monitors() -> list[dict[str, int]]:
+    try:
+        return get_physical_monitors()
+    except Exception:
+        return []
+
+
+def _resolve_capture_monitor_or_none(
+    display_setup: dict[str, object],
+    *,
+    physical_monitors: list[dict[str, int]] | None = None,
+) -> dict[str, int] | None:
+    physical_monitors = physical_monitors or _read_physical_monitors()
+    if not physical_monitors:
+        return None
+    try:
+        return resolve_capture_monitor(display_setup=display_setup, physical_monitors=physical_monitors)
+    except ValueError:
+        return dict(physical_monitors[0])
+
+
 def build_default_config() -> dict[str, object]:
-    display_setup = build_default_display_setup()
-    resolution_preset = get_capture_resolution_preset(display_setup)
+    physical_monitors = _read_physical_monitors()
+    display_setup = build_default_display_setup(physical_monitors=physical_monitors)
+    capture_monitor = _resolve_capture_monitor_or_none(
+        display_setup,
+        physical_monitors=physical_monitors,
+    )
     return {
-        "version": 6,
+        "version": 7,
         "last_selected_mode": "filters",
         "active_game_id": DEFAULT_GAME_ID,
         "encounter_increment": 1,
@@ -46,7 +72,7 @@ def build_default_config() -> dict[str, object]:
         ],
         "filters": [
             filter_definition.as_dict()
-            for filter_definition in build_builtin_filters(resolution_preset=resolution_preset)
+            for filter_definition in build_builtin_filters(capture_monitor=capture_monitor)
         ],
     }
 
@@ -69,9 +95,17 @@ class ConfigService:
             except (json.JSONDecodeError, OSError):
                 pass
 
-        config["version"] = 6
-        config["display_setup"] = normalize_display_setup(config.get("display_setup"))
-        resolution_preset = get_capture_resolution_preset(config["display_setup"])  # type: ignore[arg-type]
+        physical_monitors = self.get_physical_monitors()
+
+        config["version"] = 7
+        config["display_setup"] = normalize_display_setup(
+            config.get("display_setup"),
+            physical_monitors=physical_monitors,
+        )
+        capture_monitor = self.get_capture_monitor(
+            display_setup=config["display_setup"],  # type: ignore[arg-type]
+            physical_monitors=physical_monitors,
+        )
         config["games"] = [
             game_definition.as_dict()
             for game_definition in normalize_game_definitions(config.get("games"))
@@ -79,7 +113,7 @@ class ConfigService:
         legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
         normalized_filters = normalize_filter_definitions(
             config.get("filters"),
-            resolution_preset=resolution_preset,
+            capture_monitor=capture_monitor,
             legacy_mode_regions=legacy_mode_regions,
         )
         existing_games = normalize_game_definitions(config.get("games"))
@@ -125,7 +159,7 @@ class ConfigService:
             filter_definition = self.get_filter(filter_id)
             if filter_definition is not None:
                 return dict(filter_definition.capture_region)
-        return get_default_capture_region(mode_key, resolution_preset=self.get_capture_resolution_preset())
+        return get_default_capture_region(mode_key, monitor=self.get_capture_monitor())
 
     def set_mode_region(self, mode_key: str, region: dict[str, int]) -> dict[str, object]:
         config = self.load()
@@ -139,12 +173,34 @@ class ConfigService:
     def restore_default_region(self, mode_key: str) -> dict[str, object]:
         return self.set_mode_region(
             mode_key,
-            get_default_capture_region(mode_key, resolution_preset=self.get_capture_resolution_preset()),
+            get_default_capture_region(mode_key, monitor=self.get_capture_monitor()),
         )
 
     def get_display_setup(self) -> dict[str, object]:
         config = self.load()
-        return normalize_display_setup(config.get("display_setup"))
+        return normalize_display_setup(
+            config.get("display_setup"),
+            physical_monitors=self.get_physical_monitors(),
+        )
+
+    def get_physical_monitors(self) -> list[dict[str, int]]:
+        return _read_physical_monitors()
+
+    def get_capture_monitor(
+        self,
+        *,
+        display_setup: dict[str, object] | None = None,
+        physical_monitors: list[dict[str, int]] | None = None,
+    ) -> dict[str, int] | None:
+        active_physical_monitors = physical_monitors or self.get_physical_monitors()
+        active_display_setup = normalize_display_setup(
+            display_setup if display_setup is not None else self.get_display_setup(),
+            physical_monitors=active_physical_monitors,
+        )
+        return _resolve_capture_monitor_or_none(
+            active_display_setup,
+            physical_monitors=active_physical_monitors,
+        )
 
     def get_games(self) -> list[GameDefinition]:
         config = self.load()
@@ -172,15 +228,11 @@ class ConfigService:
 
     def set_display_setup(self, display_setup: dict[str, object]) -> dict[str, object]:
         config = self.load()
-        config["display_setup"] = normalize_display_setup(display_setup)
+        config["display_setup"] = normalize_display_setup(
+            display_setup,
+            physical_monitors=self.get_physical_monitors(),
+        )
         return self.save(config)
-
-    def get_resolution_preset(self) -> str:
-        display_setup = self.get_display_setup()
-        return str(display_setup["resolution_preset"])
-
-    def get_capture_resolution_preset(self) -> str:
-        return get_capture_resolution_preset(self.get_display_setup())
 
     def save_capture_settings(
         self,
@@ -190,7 +242,10 @@ class ConfigService:
         regions: dict[str, dict[str, int]] | None = None,
     ) -> dict[str, object]:
         config = self.load()
-        config["display_setup"] = normalize_display_setup(display_setup)
+        config["display_setup"] = normalize_display_setup(
+            display_setup,
+            physical_monitors=self.get_physical_monitors(),
+        )
 
         active_filters = filters or self.get_filters()
         region_overrides = regions or {}
@@ -265,11 +320,10 @@ class ConfigService:
 
     def get_filters(self, *, game_id: str | None = None) -> list[FilterDefinition]:
         config = self.load()
-        resolution_preset = self.get_capture_resolution_preset()
         legacy_mode_regions = self._extract_legacy_mode_regions(config.get("modes"))
         filters = normalize_filter_definitions(
             config.get("filters"),
-            resolution_preset=resolution_preset,
+            capture_monitor=self.get_capture_monitor(),
             legacy_mode_regions=legacy_mode_regions,
         )
         if game_id is None:
@@ -366,8 +420,6 @@ class ConfigService:
 
     def create_filter(self, *, name: str | None = None, game_id: str | None = None) -> FilterDefinition:
         filters = self.get_filters()
-        display_setup = self.get_display_setup()
-        resolution_preset = get_capture_resolution_preset(display_setup)
         next_name = name or f"New Filter {len(filters) + 1}"
         filter_id = self.generate_filter_id(next_name)
         target_game_id = normalize_game_id(game_id or self.get_active_game_id())
@@ -379,7 +431,7 @@ class ConfigService:
             enabled=True,
             event_type="info",
             template_path=f"{filter_id}.png",
-            capture_region=get_default_capture_region("random_grass", resolution_preset=resolution_preset),
+            capture_region=get_default_capture_region("random_grass", monitor=self.get_capture_monitor()),
             threshold=0.85,
             cooldown_seconds=POST_DETECTION_COOLDOWN_SECONDS,
             built_in=False,

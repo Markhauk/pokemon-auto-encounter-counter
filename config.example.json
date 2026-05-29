@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "last_selected_mode": "filters",
   "active_game_id": "testgamefilters",
   "encounter_increment": 1,
@@ -8,37 +8,7 @@
     "verbose_debug": false
   },
   "display_setup": {
-    "screen_count": 1,
-    "resolution_preset": "1440p",
-    "mixed_resolutions": false,
-    "layout": [
-      [
-        0,
-        0,
-        0
-      ],
-      [
-        0,
-        1,
-        0
-      ]
-    ],
-    "capture_cell": {
-      "row": 1,
-      "column": 1
-    },
-    "monitor_resolutions": [
-      [
-        "1440p",
-        "1440p",
-        "1440p"
-      ],
-      [
-        "1440p",
-        "1440p",
-        "1440p"
-      ]
-    ]
+    "capture_monitor_index": 1
   },
   "games": [
     {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .display import DEFAULT_RESOLUTION_PRESET, scale_region_for_resolution
+from .display import REFERENCE_CAPTURE_HEIGHT, REFERENCE_CAPTURE_WIDTH, scale_region_for_dimensions
 
 
 MODE_RANDOM_GRASS_KEY = "random_grass"
@@ -100,10 +100,14 @@ def get_mode(mode_key_or_name: str) -> ModeDefinition:
 def get_default_capture_region(
     mode_key_or_name: str,
     *,
-    resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
+    monitor: dict[str, int] | None = None,
 ) -> dict[str, int]:
-    return scale_region_for_resolution(
+    target_width = int(monitor.get("width", REFERENCE_CAPTURE_WIDTH)) if monitor is not None else REFERENCE_CAPTURE_WIDTH
+    target_height = int(monitor.get("height", REFERENCE_CAPTURE_HEIGHT)) if monitor is not None else REFERENCE_CAPTURE_HEIGHT
+    return scale_region_for_dimensions(
         get_mode(mode_key_or_name).default_capture_region,
-        from_preset=DEFAULT_RESOLUTION_PRESET,
-        to_preset=resolution_preset,
+        from_width=REFERENCE_CAPTURE_WIDTH,
+        from_height=REFERENCE_CAPTURE_HEIGHT,
+        to_width=target_width,
+        to_height=target_height,
     )

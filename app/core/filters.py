@@ -11,7 +11,6 @@ from .constants import (
     POST_DETECTION_COOLDOWN_SECONDS,
     WILD_THRESHOLD,
 )
-from .display import DEFAULT_RESOLUTION_PRESET
 from .modes import get_default_capture_region
 
 
@@ -187,7 +186,7 @@ def normalize_cooldown_seconds(value: object) -> float:
 
 def build_builtin_filters(
     *,
-    resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
+    capture_monitor: dict[str, int] | None = None,
     legacy_mode_regions: dict[str, dict[str, int]] | None = None,
 ) -> list[FilterDefinition]:
     legacy_regions = legacy_mode_regions or {}
@@ -201,7 +200,7 @@ def build_builtin_filters(
                 "width": int(region.get("width", 0)),
                 "height": int(region.get("height", 0)),
             }
-        return get_default_capture_region(mode_key, resolution_preset=resolution_preset)
+        return get_default_capture_region(mode_key, monitor=capture_monitor)
 
     return [
         FilterDefinition(
@@ -272,12 +271,12 @@ def _normalize_region(raw_region: object) -> dict[str, int]:
 def normalize_filter_definition(
     raw_filter: object,
     *,
-    resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
+    capture_monitor: dict[str, int] | None = None,
     fallback_filters: dict[str, FilterDefinition] | None = None,
 ) -> FilterDefinition:
-    fallback_map = fallback_filters or {flt.id: flt for flt in build_builtin_filters(resolution_preset=resolution_preset)}
+    fallback_map = fallback_filters or {flt.id: flt for flt in build_builtin_filters(capture_monitor=capture_monitor)}
     if not isinstance(raw_filter, dict):
-        default = build_builtin_filters(resolution_preset=resolution_preset)[0]
+        default = build_builtin_filters(capture_monitor=capture_monitor)[0]
         return default
 
     filter_id = slugify_filter_name(str(raw_filter.get("id", "filter")))
@@ -328,11 +327,11 @@ def normalize_filter_definition(
 def normalize_filter_definitions(
     raw_filters: object,
     *,
-    resolution_preset: str = DEFAULT_RESOLUTION_PRESET,
+    capture_monitor: dict[str, int] | None = None,
     legacy_mode_regions: dict[str, dict[str, int]] | None = None,
 ) -> list[FilterDefinition]:
     built_ins = build_builtin_filters(
-        resolution_preset=resolution_preset,
+        capture_monitor=capture_monitor,
         legacy_mode_regions=legacy_mode_regions,
     )
     built_in_map = {flt.id: flt for flt in built_ins}
@@ -349,7 +348,7 @@ def normalize_filter_definitions(
     for raw_filter in iterable:
         filter_definition = normalize_filter_definition(
             raw_filter,
-            resolution_preset=resolution_preset,
+            capture_monitor=capture_monitor,
             fallback_filters=built_in_map,
         )
         if filter_definition.id in seen_ids:

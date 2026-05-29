@@ -18,12 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.capture import capture_region_summary
-from app.core.display import (
-    describe_layout_cell,
-    format_monitor_summary,
-    get_capture_resolution_preset,
-    get_resolution_label,
-)
+from app.core.display import format_monitor_summary
 from app.services.app_controller import AppController
 
 
@@ -164,24 +159,17 @@ class DashboardTab(QWidget):
             if status.status_label() != "Found"
         ]
 
-        capture_cell = display_setup["capture_cell"]
-        capture_label = describe_layout_cell(int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
-        capture_resolution_preset = get_capture_resolution_preset(display_setup)
-
         lines = [
             f"Active game: {active_game.name if active_game is not None else active_game_id}",
             f"Enabled filters: {len(enabled_filters)} of {len(filters)}",
-            f"Capture monitor cell: {capture_label}",
-            f"Capture monitor resolution: {capture_resolution_preset.upper()} ({get_resolution_label(capture_resolution_preset)})",
         ]
 
         try:
-            monitor = self.controller.get_monitor_cell_mapping(display_setup=display_setup)[
-                (int(capture_cell["row"]), int(capture_cell["column"]))  # type: ignore[index]
-            ]
+            monitor = self.controller.get_selected_capture_monitor(display_setup=display_setup)
         except ValueError as exc:
             lines.append(str(exc))
         else:
+            lines.append(f"Capture monitor: Monitor {monitor['index']}")
             lines.append(f"Resolved monitor: {format_monitor_summary(monitor)}")
 
         if missing_templates:
