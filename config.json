@@ -2,13 +2,13 @@
   "version": 7,
   "last_selected_mode": "filters",
   "active_game_id": "testgamefilters",
-  "encounter_increment": 1,
+  "encounter_increment": 3,
   "debug": {
-    "save_debug_frames": false,
+    "save_debug_frames": true,
     "verbose_debug": false
   },
   "display_setup": {
-    "capture_monitor_index": 1
+    "capture_monitor_index": 3
   },
   "games": [
     {
@@ -22,13 +22,13 @@
     {
       "id": "wild",
       "name": "Wild",
-      "enabled": false,
+      "enabled": true,
       "event_type": "encounter_start",
       "template_path": "wild.png",
       "capture_region": {
-        "left": 423,
-        "top": 1602,
-        "width": 364,
+        "left": 250,
+        "top": 1000,
+        "width": 300,
         "height": 171
       },
       "threshold": 0.85,
@@ -102,7 +102,7 @@
     {
       "id": "new_filter_5",
       "name": "Fullscreen",
-      "enabled": true,
+      "enabled": false,
       "event_type": "label",
       "template_path": "new_filter_5.png",
       "capture_region": {
@@ -122,7 +122,7 @@
     {
       "id": "new_filter_6",
       "name": "Fullscreen2",
-      "enabled": true,
+      "enabled": false,
       "event_type": "info",
       "template_path": "new_filter_6.png",
       "capture_region": {
