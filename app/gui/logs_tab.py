@@ -32,12 +32,18 @@ class LogsTab(QWidget):
         self.current_counter_value = QLabel("0")
         self.current_catch_value = QLabel("0")
         self.current_event_value = QLabel("none")
+        self.current_game_value = QLabel("N/A")
+        self.current_session_value = QLabel("N/A")
+        self.current_session_counter_value = QLabel("0")
         self.current_filter_value = QLabel("N/A")
         self.current_label_value = QLabel("N/A")
         self.output_dir_value = QLabel(self.controller.get_output_dir())
         self.output_dir_value.setWordWrap(True)
         summary_layout.addRow("Current counter", self.current_counter_value)
         summary_layout.addRow("Current catch counter", self.current_catch_value)
+        summary_layout.addRow("Game", self.current_game_value)
+        summary_layout.addRow("Session", self.current_session_value)
+        summary_layout.addRow("Session encounters", self.current_session_counter_value)
         summary_layout.addRow("Last event", self.current_event_value)
         summary_layout.addRow("Last filter", self.current_filter_value)
         summary_layout.addRow("Active label", self.current_label_value)
@@ -80,6 +86,8 @@ class LogsTab(QWidget):
             lines.append(
                 f"{event.get('timestamp', '')} | {event.get('filter_name', event.get('event', ''))} | "
                 f"type={event.get('filter_event_type', event.get('event', ''))} | "
+                f"game={event.get('game_name', event.get('game_id', ''))} | "
+                f"session=#{event.get('session_number', 0)} | "
                 f"encounters={event.get('counter', 0)} | catches={event.get('catch_counter', 0)} | "
                 f"+{event.get('encounter_increment', 1)} | "
                 f"region=({event.get('capture_left', 0)}, {event.get('capture_top', 0)}, "
@@ -91,6 +99,12 @@ class LogsTab(QWidget):
         self.current_counter_value.setText(str(snapshot.get("counter", 0)))
         self.current_catch_value.setText(str(snapshot.get("catch_counter", 0)))
         self.current_event_value.setText(str(snapshot.get("last_event", "none")))
+        self.current_game_value.setText(
+            str(snapshot.get("game_name", snapshot.get("active_game_name", "N/A")) or "N/A")
+        )
+        session_number = int(snapshot.get("session_number", 0))
+        self.current_session_value.setText(f"#{session_number}" if session_number else "N/A")
+        self.current_session_counter_value.setText(str(snapshot.get("session_encounter_count", 0)))
         self.current_filter_value.setText(str(snapshot.get("last_filter_name", "N/A") or "N/A"))
         self.current_label_value.setText(str(snapshot.get("active_label", "N/A") or "N/A"))
 

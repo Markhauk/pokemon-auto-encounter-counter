@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -26,6 +27,8 @@ from PySide6.QtWidgets import (
 from app.core.constants import POST_DETECTION_COOLDOWN_SECONDS
 from app.core.filters import FilterDefinition, GameDefinition
 from app.services.app_controller import AppController
+
+from .template_crop_dialog import TemplateCropDialog
 
 
 class FiltersTab(QWidget):
@@ -120,10 +123,10 @@ class FiltersTab(QWidget):
         button_row = QHBoxLayout()
         self.save_filter_button = QPushButton("Save Filter")
         self.preview_button = QPushButton("Capture Preview")
-        self.save_template_button = QPushButton("Save Preview As Template")
+        self.make_template_button = QPushButton("Make Template...")
         button_row.addWidget(self.save_filter_button)
         button_row.addWidget(self.preview_button)
-        button_row.addWidget(self.save_template_button)
+        button_row.addWidget(self.make_template_button)
 
         self.filter_status_label = QLabel("No filter selected.")
         self.filter_status_label.setWordWrap(True)
@@ -159,7 +162,7 @@ class FiltersTab(QWidget):
         self.refresh_button.clicked.connect(self.refresh)
         self.save_filter_button.clicked.connect(self._save_filter)
         self.preview_button.clicked.connect(self._capture_preview)
-        self.save_template_button.clicked.connect(self._save_template)
+        self.make_template_button.clicked.connect(self._make_template)
 
         self.controller.config_changed.connect(self._handle_config_changed)
         self.controller.preview_captured.connect(self._handle_preview_captured)
@@ -376,21 +379,50 @@ class FiltersTab(QWidget):
             return
         self._apply_preview(payload)
 
-    def _save_template(self) -> None:
+    def _make_template(self) -> None:
         filter_definition = self._current_filter()
         if filter_definition is None:
             return
         self._save_filter()
         try:
-            destination = self.controller.save_filter_template_from_preview(filter_definition.id)
+            source = self.controller.capture_template_source(filter_definition.id)
+        except Exception as exc:
+            self._show_error(str(exc))
+            return
+
+        try:
+            dialog = TemplateCropDialog(
+                source_path=str(source["source_path"]),
+                filter_name=str(source["filter_name"]),
+                monitor_summary=str(source["monitor_summary"]),
+                initial_region=dict(source["initial_region"]),  # type: ignore[arg-type]
+                search_padding=int(source["search_padding"]),
+                parent=self,
+            )
+        except Exception as exc:
+            self._show_error(str(exc))
+            return
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        result_data = dialog.result_data()
+        try:
+            result = self.controller.save_template_crop(
+                filter_id=filter_definition.id,
+                template_region=dict(result_data["template_region"]),  # type: ignore[arg-type]
+                search_padding=int(result_data["search_padding"]),
+            )
         except Exception as exc:
             self._show_error(str(exc))
             return
 
         QMessageBox.information(
             self,
-            "Filters",
-            f"Saved preview as template:\n{destination}",
+            "Template Saved",
+            f"Template: {result['path']}\n"
+            f"Template region: {result['template_region']}\n"
+            f"Search region: {result['capture_region']}",
         )
         self.refresh()
 
@@ -435,13 +467,26 @@ class FiltersTab(QWidget):
     def _apply_preview(self, payload: dict[str, object]) -> None:
         preview_path = Path(str(payload.get("path", self.controller.get_debug_frame_path())))
         self._load_pixmap(preview_path)
+        template_match = payload.get("template_match", {})
+        if isinstance(template_match, dict) and template_match.get("available"):
+            calibration = (
+                f"Live template score: {float(template_match.get('score', 0.0)):.3f} "
+                f"(threshold {float(template_match.get('threshold', 0.0)):.3f}, "
+                f"found={bool(template_match.get('found', False))})"
+            )
+        elif isinstance(template_match, dict):
+            calibration = f"Live template score unavailable: {template_match.get('error', 'unknown reason')}"
+        else:
+            calibration = "Live template score unavailable."
+
         self.preview_info.setText(
             f"Filter: {payload.get('filter_name', '')}\n"
             f"Event type: {payload.get('event_type', '')}\n"
             f"Relative region: {payload.get('region', {})}\n"
             f"Absolute region: {payload.get('absolute_region', {})}\n"
             f"Monitor: {payload.get('monitor_summary', '')}\n"
-            f"Stats: {payload.get('stats', {})}"
+            f"Stats: {payload.get('stats', {})}\n"
+            f"{calibration}"
         )
 
     def _load_pixmap(self, path: Path) -> None:

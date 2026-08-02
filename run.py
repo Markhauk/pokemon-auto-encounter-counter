@@ -5,6 +5,7 @@ import sys
 from app.core.capture import get_monitors, get_physical_monitors, resolve_capture_region, save_all_monitors, save_monitor
 from app.core.display import build_absolute_capture_region
 from app.core.detector import EncounterCounterEngine
+from app.core.event_logger import EventLogger
 from app.core.exceptions import EncounterCounterError
 from app.core.modes import (
     MODE_EGG_KEY,
@@ -12,8 +13,9 @@ from app.core.modes import (
     MODE_SAFARI_ZONE_KEY,
 )
 from app.core.paths import LOCK_FILE, OUTPUT_DIR
-from app.core.state_manager import SingleInstanceGuard
+from app.core.state_manager import SingleInstanceGuard, StateManager
 from app.services.config_service import ConfigService
+from app.services.session_service import SessionService
 
 
 def handle_shutdown(counter: EncounterCounterEngine, signum, frame) -> None:  # type: ignore[no-untyped-def]
@@ -86,6 +88,7 @@ def run_mode(
     config_service: ConfigService,
     mode_key: str,
     encounter_increment: int,
+    session_service: SessionService,
 ) -> None:
     default_region = config_service.get_mode_region(mode_key)
     if args.monitor is None and args.region is None and args.monitor_region is None:
@@ -116,6 +119,7 @@ def run_mode(
     config_service.save(config)
 
     with SingleInstanceGuard(LOCK_FILE):
+        session_context = session_service.ensure_for_active_game()
         counter = EncounterCounterEngine(
             capture_region=capture_region,
             save_debug_frames=save_debug_frames,
@@ -123,6 +127,7 @@ def run_mode(
             verbose_debug=verbose_debug,
             mode_key=mode_key,
             encounter_increment=encounter_increment,
+            session_context=session_context,
         )
         configure_signal_handlers(counter)
         counter.run()
@@ -218,6 +223,12 @@ def main() -> None:
         sys.exit(1)
 
     config_service = ConfigService()
+    session_service = SessionService(
+        config_service=config_service,
+        state_manager=StateManager(),
+        event_logger=EventLogger(),
+    )
+    session_service.initialize()
     encounter_increment = ask_encounter_increment(config_service.get_encounter_increment())
 
     while True:
@@ -230,6 +241,7 @@ def main() -> None:
                     config_service=config_service,
                     mode_key=MODE_RANDOM_GRASS_KEY,
                     encounter_increment=encounter_increment,
+                    session_service=session_service,
                 )
                 return
 
@@ -239,6 +251,7 @@ def main() -> None:
                     config_service=config_service,
                     mode_key=MODE_SAFARI_ZONE_KEY,
                     encounter_increment=encounter_increment,
+                    session_service=session_service,
                 )
                 return
 
@@ -248,6 +261,7 @@ def main() -> None:
                     config_service=config_service,
                     mode_key=MODE_EGG_KEY,
                     encounter_increment=encounter_increment,
+                    session_service=session_service,
                 )
                 return
 

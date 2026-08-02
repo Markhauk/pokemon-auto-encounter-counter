@@ -26,7 +26,7 @@ from .filters import (
     FilterDefinition,
     build_legacy_mode_filters,
 )
-from .models import CounterSnapshot, FilterRuntimeState, MatchResult
+from .models import CounterSnapshot, FilterRuntimeState, MatchResult, SessionContext
 from .paths import DEBUG_FRAME_FILE
 from .state_manager import StateManager
 from .templates import TemplateManager
@@ -53,6 +53,7 @@ class EncounterCounterEngine:
         template_manager: Optional[TemplateManager] = None,
         log_handler: Optional[LogHandler] = None,
         status_handler: Optional[StatusHandler] = None,
+        session_context: SessionContext | None = None,
     ) -> None:
         self.running = True
         self.mode_key = mode_key if filters is None else "filters"
@@ -85,6 +86,14 @@ class EncounterCounterEngine:
         self.template_manager = template_manager or TemplateManager()
         self.log_handler = log_handler
         self.status_handler = status_handler
+        self.session_context = session_context
+        self.game_id = session_context.game_id if session_context is not None else ""
+        self.game_name = session_context.game_name if session_context is not None else ""
+        self.session_id = session_context.session_id if session_context is not None else ""
+        self.session_number = session_context.session_number if session_context is not None else 0
+        self.session_started_at = session_context.session_started_at if session_context is not None else ""
+        self.session_start_counter = session_context.session_start_counter if session_context is not None else 0
+        self.session_encounter_count = session_context.session_encounter_count if session_context is not None else 0
 
         configured_filters = list(filters or [])
         if not configured_filters and capture_region is not None:
@@ -125,6 +134,7 @@ class EncounterCounterEngine:
             mode_name=self.mode_name,
             capture_region=self.capture_region,
             encounter_increment=self.encounter_increment,
+            session_context=self.session_context,
         )
         self.counter = int(state["counter"])
         self.catch_counter = int(state["catch_counter"])
@@ -137,6 +147,15 @@ class EncounterCounterEngine:
         self.active_label = str(state.get("active_label", ""))
         self.last_catch_at_encounter = int(state["last_catch_at_encounter"])
         self.encounters_since_last_catch = int(state["encounters_since_last_catch"])
+        self.game_id = str(state.get("game_id", self.game_id))
+        self.game_name = str(state.get("game_name", self.game_name))
+        self.session_id = str(state.get("session_id", self.session_id))
+        self.session_number = int(state.get("session_number", self.session_number))
+        self.session_started_at = str(state.get("session_started_at", self.session_started_at))
+        self.session_start_counter = int(state.get("session_start_counter", self.session_start_counter))
+        self.session_encounter_count = int(
+            state.get("session_encounter_count", self.session_encounter_count)
+        )
 
         filters_runtime = state.get("filters_runtime", {})
         if isinstance(filters_runtime, dict):
@@ -192,6 +211,13 @@ class EncounterCounterEngine:
             status=status,
             mode_key="filters",
             mode_name="Filter scan",
+            game_id=self.game_id,
+            game_name=self.game_name,
+            session_id=self.session_id,
+            session_number=self.session_number,
+            session_started_at=self.session_started_at,
+            session_start_counter=self.session_start_counter,
+            session_encounter_count=self.session_encounter_count,
             encounter_increment=self.encounter_increment,
             enabled_filter_count=len(self.enabled_filters),
             counter=self.counter,
@@ -249,6 +275,13 @@ class EncounterCounterEngine:
             "capture_left": filter_definition.capture_region["left"],
             "capture_width": filter_definition.capture_region["width"],
             "capture_height": filter_definition.capture_region["height"],
+            "game_id": self.game_id,
+            "game_name": self.game_name,
+            "session_id": self.session_id,
+            "session_number": self.session_number,
+            "session_started_at": self.session_started_at,
+            "session_start_counter": self.session_start_counter,
+            "session_encounter_count": self.session_encounter_count,
         }
 
     def append_event_log(self, filter_definition: FilterDefinition, score: float) -> None:
@@ -320,11 +353,13 @@ class EncounterCounterEngine:
             self.active_label = filter_definition.name
         elif event_type == EVENT_TYPE_CATCH:
             self.counter += self.encounter_increment
+            self.session_encounter_count += self.encounter_increment
             self.catch_counter += 1
             self.last_catch_at_encounter = self.counter
             self.encounters_since_last_catch = 0
         elif event_type in {EVENT_TYPE_ENCOUNTER_START, EVENT_TYPE_FLED}:
             self.counter += self.encounter_increment
+            self.session_encounter_count += self.encounter_increment
             self.encounters_since_last_catch = self._calculate_encounters_since_last_catch()
         elif event_type == EVENT_TYPE_INFO:
             self.encounters_since_last_catch = self._calculate_encounters_since_last_catch()

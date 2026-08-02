@@ -24,8 +24,12 @@ from app.core.filters import (
     slugify_filter_name,
     slugify_game_name,
 )
+from app.core.file_io import atomic_write_text
 from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
+
+
+CONFIG_VERSION = 7
 
 
 def _read_physical_monitors() -> list[dict[str, int]]:
@@ -57,7 +61,7 @@ def build_default_config() -> dict[str, object]:
         physical_monitors=physical_monitors,
     )
     return {
-        "version": 7,
+        "version": CONFIG_VERSION,
         "last_selected_mode": "filters",
         "active_game_id": DEFAULT_GAME_ID,
         "encounter_increment": 1,
@@ -89,15 +93,21 @@ class ConfigService:
         config = build_default_config()
         if self.config_path.exists():
             try:
-                loaded = json.loads(self.config_path.read_text(encoding="utf-8"))
+                original_text = self.config_path.read_text(encoding="utf-8")
+                loaded = json.loads(original_text)
                 if isinstance(loaded, dict):
+                    if loaded.get("version") != CONFIG_VERSION:
+                        self._backup_for_migration(
+                            original_text,
+                            source_version=loaded.get("version"),
+                        )
                     config = self._merge_dicts(config, loaded)
             except (json.JSONDecodeError, OSError):
                 pass
 
         physical_monitors = self.get_physical_monitors()
 
-        config["version"] = 7
+        config["version"] = CONFIG_VERSION
         config["display_setup"] = normalize_display_setup(
             config.get("display_setup"),
             physical_monitors=physical_monitors,
@@ -144,7 +154,7 @@ class ConfigService:
     def save(self, config: dict[str, object] | None = None) -> dict[str, object]:
         current = copy.deepcopy(config or self.load())
         current.pop("modes", None)
-        self.config_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        atomic_write_text(self.config_path, json.dumps(current, indent=2))
         self._config = current
         return copy.deepcopy(current)
 
@@ -482,3 +492,19 @@ class ConfigService:
             else:
                 merged[key] = value
         return merged
+
+    def _backup_for_migration(self, original_text: str, *, source_version: object) -> Path:
+        try:
+            source_label = f"v{int(source_version)}"
+        except (TypeError, ValueError):
+            source_label = "legacy"
+        backup_dir = (
+            self.config_path.parent
+            / "output"
+            / "migration_backups"
+            / f"config_{source_label}_to_v{CONFIG_VERSION}"
+        )
+        backup_file = backup_dir / self.config_path.name
+        if not backup_file.exists():
+            atomic_write_text(backup_file, original_text)
+        return backup_file

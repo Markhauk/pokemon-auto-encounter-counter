@@ -39,4 +39,11 @@ EVENT_LOG_CSV_FIELDS = [
     "capture_left",
     "capture_width",
     "capture_height",
+    "game_id",
+    "game_name",
+    "session_id",
+    "session_number",
+    "session_started_at",
+    "session_start_counter",
+    "session_encounter_count",
 ]

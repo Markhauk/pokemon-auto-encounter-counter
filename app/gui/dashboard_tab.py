@@ -44,7 +44,9 @@ class DashboardTab(QWidget):
         self.verbose_debug_checkbox = QCheckBox("Verbose debug logging")
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop")
+        self.new_session_button = QPushButton("New Session")
         self.status_value = QLabel("Idle")
+        self.session_value = QLabel("N/A")
         self.setup_summary_label = QLabel("")
         self.setup_summary_label.setWordWrap(True)
         self.setup_summary_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -57,9 +59,12 @@ class DashboardTab(QWidget):
         controls_layout.addWidget(self.stop_button, 0, 5)
         controls_layout.addWidget(QLabel("Status"), 1, 0)
         controls_layout.addWidget(self.status_value, 1, 1)
+        controls_layout.addWidget(QLabel("Session"), 1, 2)
+        controls_layout.addWidget(self.session_value, 1, 3)
         controls_layout.addWidget(self.save_debug_checkbox, 1, 4)
         controls_layout.addWidget(self.verbose_debug_checkbox, 1, 5)
-        controls_layout.addWidget(self.setup_summary_label, 2, 0, 1, 6)
+        controls_layout.addWidget(self.new_session_button, 2, 4, 1, 2)
+        controls_layout.addWidget(self.setup_summary_label, 2, 0, 2, 4)
 
         summary_row = QHBoxLayout()
 
@@ -68,10 +73,12 @@ class DashboardTab(QWidget):
         self.encounter_value = QLabel("0")
         self.catch_value = QLabel("0")
         self.since_catch_value = QLabel("0")
+        self.session_encounter_value = QLabel("0")
         self.last_score_value = QLabel("0.000")
         counters_layout.addRow("Encounters", self.encounter_value)
         counters_layout.addRow("Catches", self.catch_value)
         counters_layout.addRow("Since last catch", self.since_catch_value)
+        counters_layout.addRow("This session", self.session_encounter_value)
         counters_layout.addRow("Last match score", self.last_score_value)
 
         details_group = QGroupBox("Live Details")
@@ -112,6 +119,7 @@ class DashboardTab(QWidget):
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_scan)
         self.stop_button.clicked.connect(self.controller.stop_scan)
+        self.new_session_button.clicked.connect(self._start_new_session)
         self.game_combo.currentIndexChanged.connect(self._handle_game_changed)
 
         self.controller.snapshot_changed.connect(self._apply_snapshot)
@@ -119,6 +127,7 @@ class DashboardTab(QWidget):
         self.controller.log_received.connect(self._append_log_message)
         self.controller.error_occurred.connect(self._show_error)
         self.controller.config_changed.connect(self._handle_config_changed)
+        self.controller.session_changed.connect(lambda _session: self._refresh_setup_summary())
 
     def _load_initial_state(self) -> None:
         config = self.controller.get_config()
@@ -143,6 +152,7 @@ class DashboardTab(QWidget):
             lines.append(
                 f"{event.get('timestamp', '')} | {filter_name} | "
                 f"type={event.get('filter_event_type', event.get('event', ''))} | "
+                f"session=#{event.get('session_number', 0)} | "
                 f"encounters={event.get('counter', 0)} | catches={event.get('catch_counter', 0)}"
             )
         self.log_box.setPlainText("\n".join(lines))
@@ -163,6 +173,12 @@ class DashboardTab(QWidget):
             f"Active game: {active_game.name if active_game is not None else active_game_id}",
             f"Enabled filters: {len(enabled_filters)} of {len(filters)}",
         ]
+        session = self.controller.get_session_context()
+        if int(session.get("session_number", 0)):
+            lines.append(
+                f"Active session: #{session['session_number']} "
+                f"(started at lifetime encounter {session['session_start_counter']})"
+            )
 
         try:
             monitor = self.controller.get_selected_capture_monitor(display_setup=display_setup)
@@ -183,6 +199,9 @@ class DashboardTab(QWidget):
         self.encounter_value.setText(str(snapshot.get("counter", 0)))
         self.catch_value.setText(str(snapshot.get("catch_counter", 0)))
         self.since_catch_value.setText(str(snapshot.get("encounters_since_last_catch", 0)))
+        self.session_encounter_value.setText(str(snapshot.get("session_encounter_count", 0)))
+        session_number = int(snapshot.get("session_number", 0))
+        self.session_value.setText(f"#{session_number}" if session_number else "N/A")
         self.last_score_value.setText(f"{float(snapshot.get('last_match_score', 0.0)):.3f}")
         self.enabled_filters_value.setText(str(snapshot.get("enabled_filter_count", 0)))
         self.last_event_value.setText(str(snapshot.get("last_event", "none")))
@@ -213,6 +232,7 @@ class DashboardTab(QWidget):
         self.increment_spin.setEnabled(not running)
         self.save_debug_checkbox.setEnabled(not running)
         self.verbose_debug_checkbox.setEnabled(not running)
+        self.new_session_button.setEnabled(not running)
 
     def _refresh_game_selector(self) -> None:
         active_game_id = self.controller.get_active_game_id()
@@ -242,6 +262,19 @@ class DashboardTab(QWidget):
             save_debug_frames=self.save_debug_checkbox.isChecked(),
             verbose_debug=self.verbose_debug_checkbox.isChecked(),
         )
+
+    def _start_new_session(self) -> None:
+        response = QMessageBox.question(
+            self,
+            "Start New Session",
+            "Start a new session for the selected game? The lifetime encounter and catch counters will not reset.",
+        )
+        if response != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.controller.start_new_session()
+        except Exception as exc:
+            self._show_error(str(exc))
 
     def _handle_game_changed(self, _index: int) -> None:
         if self._loading or self.controller.is_running():

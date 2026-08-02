@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from .exceptions import SingleInstanceError
-from .models import CounterSnapshot
+from .file_io import atomic_write_bytes, atomic_write_text
+from .models import CounterSnapshot, SessionContext
 from .paths import COUNTER_FILE, OUTPUT_DIR, STATE_FILE, TEMPLATES_DIR
 
 
@@ -121,7 +122,9 @@ class StateManager:
         mode_name: str,
         capture_region: dict[str, int],
         encounter_increment: int,
+        session_context: SessionContext | None = None,
     ) -> dict[str, object]:
+        session_defaults = session_context.as_dict() if session_context is not None else {}
         state: dict[str, object] = {
             "counter": 0,
             "catch_counter": 0,
@@ -142,6 +145,13 @@ class StateManager:
             "filters_runtime": {},
             "mode_key": mode_key,
             "mode_name": mode_name,
+            "game_id": str(session_defaults.get("game_id", "")),
+            "game_name": str(session_defaults.get("game_name", "")),
+            "session_id": str(session_defaults.get("session_id", "")),
+            "session_number": _safe_int(session_defaults.get("session_number"), 0),
+            "session_started_at": str(session_defaults.get("session_started_at", "")),
+            "session_start_counter": _safe_int(session_defaults.get("session_start_counter"), 0),
+            "session_encounter_count": _safe_int(session_defaults.get("session_encounter_count"), 0),
         }
 
         if self.counter_file.exists():
@@ -169,6 +179,14 @@ class StateManager:
                 state["encounters_since_last_catch"] = _safe_int(data.get("encounters_since_last_catch"), 0)
                 if isinstance(data.get("filters_runtime"), dict):
                     state["filters_runtime"] = data.get("filters_runtime", {})
+                if session_context is None:
+                    state["game_id"] = str(data.get("game_id", ""))
+                    state["game_name"] = str(data.get("game_name", ""))
+                    state["session_id"] = str(data.get("session_id", ""))
+                    state["session_number"] = _safe_int(data.get("session_number"), 0)
+                    state["session_started_at"] = str(data.get("session_started_at", ""))
+                    state["session_start_counter"] = _safe_int(data.get("session_start_counter"), 0)
+                    state["session_encounter_count"] = _safe_int(data.get("session_encounter_count"), 0)
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -184,35 +202,71 @@ class StateManager:
         return state
 
     def save(self, snapshot: CounterSnapshot) -> None:
-        self.counter_file.write_text(str(snapshot.counter), encoding="utf-8")
-        self.state_file.write_text(
-            json.dumps(
-                {
-                    "counter": snapshot.counter,
-                    "catch_counter": snapshot.catch_counter,
-                    "encounter_increment": snapshot.encounter_increment,
-                    "cooldown_until": snapshot.cooldown_until,
-                    "waiting_for_clear": snapshot.waiting_for_clear,
-                    "last_event": snapshot.last_event,
-                    "last_event_at": snapshot.last_event_at,
-                    "last_match_score": snapshot.last_match_score,
-                    "last_filter_id": snapshot.last_filter_id,
-                    "last_filter_name": snapshot.last_filter_name,
-                    "last_filter_event_type": snapshot.last_filter_event_type,
-                    "active_label": snapshot.active_label,
-                    "enabled_filter_count": snapshot.enabled_filter_count,
-                    "last_catch_at_encounter": snapshot.last_catch_at_encounter,
-                    "encounters_since_last_catch": snapshot.encounters_since_last_catch,
-                    "capture_region": snapshot.capture_region,
-                    "filters_runtime": snapshot.filters_runtime,
-                    "mode_key": snapshot.mode_key,
-                    "mode_name": snapshot.mode_name,
-                    "status": snapshot.status,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        state_text = json.dumps(
+            {
+                "counter": snapshot.counter,
+                "catch_counter": snapshot.catch_counter,
+                "encounter_increment": snapshot.encounter_increment,
+                "cooldown_until": snapshot.cooldown_until,
+                "waiting_for_clear": snapshot.waiting_for_clear,
+                "last_event": snapshot.last_event,
+                "last_event_at": snapshot.last_event_at,
+                "last_match_score": snapshot.last_match_score,
+                "last_filter_id": snapshot.last_filter_id,
+                "last_filter_name": snapshot.last_filter_name,
+                "last_filter_event_type": snapshot.last_filter_event_type,
+                "active_label": snapshot.active_label,
+                "enabled_filter_count": snapshot.enabled_filter_count,
+                "last_catch_at_encounter": snapshot.last_catch_at_encounter,
+                "encounters_since_last_catch": snapshot.encounters_since_last_catch,
+                "capture_region": snapshot.capture_region,
+                "filters_runtime": snapshot.filters_runtime,
+                "mode_key": snapshot.mode_key,
+                "mode_name": snapshot.mode_name,
+                "game_id": snapshot.game_id,
+                "game_name": snapshot.game_name,
+                "session_id": snapshot.session_id,
+                "session_number": snapshot.session_number,
+                "session_started_at": snapshot.session_started_at,
+                "session_start_counter": snapshot.session_start_counter,
+                "session_encounter_count": snapshot.session_encounter_count,
+                "status": snapshot.status,
+            },
+            indent=2,
         )
+        # state.json is canonical; counter.txt is a compatibility mirror.
+        atomic_write_text(self.state_file, state_text)
+        atomic_write_text(self.counter_file, str(snapshot.counter))
+
+    def write_session_context(self, context: SessionContext) -> dict[str, object]:
+        """Update session metadata without changing any persisted counters."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        state = self.read_state_dict()
+        state.update(context.as_dict())
+        if "counter" not in state:
+            state["counter"] = self.read_counter()
+        atomic_write_text(self.state_file, json.dumps(state, indent=2))
+        return state
+
+    def backup_for_migration(self, migration_name: str) -> Path:
+        """Keep one immutable copy of state mirrors before a named migration."""
+        backup_dir = self.output_dir / "migration_backups" / migration_name
+        for source in (self.state_file, self.counter_file):
+            destination = backup_dir / source.name
+            if source.exists() and not destination.exists():
+                atomic_write_bytes(destination, source.read_bytes())
+        return backup_dir
+
+    def read_counter(self) -> int:
+        state = self.read_state_dict()
+        if "counter" in state:
+            return _safe_int(state.get("counter"), 0)
+        if not self.counter_file.exists():
+            return 0
+        try:
+            return int(self.counter_file.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return 0
 
     def read_state_dict(self) -> dict[str, object]:
         if not self.state_file.exists():

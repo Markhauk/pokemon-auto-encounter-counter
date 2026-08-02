@@ -9,6 +9,11 @@ from app.services.app_controller import AppController
 
 
 def main() -> int:
+    if "--smoke-test" in sys.argv:
+        from app.smoke_test import run_smoke_test
+
+        return run_smoke_test()
+
     app = QApplication(sys.argv)
     app.setApplicationName("Pokemon Encounter Counter")
     app.setOrganizationName("Local Utility")

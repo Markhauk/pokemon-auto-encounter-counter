@@ -1,0 +1,66 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --extra build --locked
+
+      - name: Run unit tests
+        run: uv run --frozen python -B -m unittest discover -s tests -v
+
+      - name: Validate syntax and imports
+        run: |
+          uv run --frozen python -B -m compileall -q app tests run.py
+          uv run --frozen python -B -c "import app.main, run"
+
+      - name: Run source smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run --frozen python -B -m app.main --smoke-test
+
+      - name: Build packaged application
+        run: uv run --frozen --extra build pyinstaller pokemon-encounter-counter.spec --noconfirm
+
+      - name: Run packaged smoke test
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $executable = Resolve-Path "dist\PokemonEncounterCounter\PokemonEncounterCounter.exe"
+          $process = Start-Process -FilePath $executable -ArgumentList "--smoke-test" -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged smoke test failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Upload packaged application
+        uses: actions/upload-artifact@v7
+        with:
+          name: PokemonEncounterCounter-windows
+          path: dist/PokemonEncounterCounter/
+          if-no-files-found: error
+          retention-days: 14

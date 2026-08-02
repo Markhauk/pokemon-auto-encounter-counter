@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from app.core.detector import EncounterCounterEngine
 from app.core.filters import FilterDefinition
+from app.core.models import SessionContext
 from app.core.paths import LOCK_FILE
 from app.core.state_manager import SingleInstanceGuard
 
@@ -17,6 +18,7 @@ class DetectionRequest:
     encounter_increment: int
     save_debug_frames: bool = False
     verbose_debug: bool = False
+    session_context: SessionContext | None = None
 
 
 class DetectionWorker(QObject):
@@ -40,6 +42,7 @@ class DetectionWorker(QObject):
                     save_debug_frames=self.request.save_debug_frames,
                     verbose_debug=self.request.verbose_debug,
                     encounter_increment=self.request.encounter_increment,
+                    session_context=self.request.session_context,
                     log_handler=self._emit_log,
                     status_handler=self._emit_status,
                 )

@@ -29,6 +29,10 @@ What that means:
 - Per-mode capture region settings stored in `config.json`
 - Live counter and runtime status updates
 - Test screenshot workflow with preview
+- In-app template creator with a draggable and resizable crop selection
+- Automatic padded search regions around tightly cropped text templates
+- Live template-match score in the preview workflow
+- Game identity and numbered sessions without resetting the lifetime counter
 - Template status and preview tab
 - Local logs and state viewer
 - Single-instance protection while scanning
@@ -47,8 +51,9 @@ What that means:
   - `templates/wild.png`
 
 - **Egg mode**
-  Detects:
-  - `templates/huh.png`
+  Counts the egg `Huh?` prompt. The filter is included in the release, and the
+  template can be created for the user's game and display setup with
+  `Filters -> Huh -> Make Template`.
 
 ### Planned
 
@@ -76,7 +81,12 @@ The application continues to use these files:
 - `output/encounter_log.csv`
 - `output/event_log.jsonl`
 - `output/last_capture.png`
+- `output/template_source.png`
 - `output/encounter_counter.lock`
+
+`state.json`, CSV, and JSONL events include the active game and session. The
+lifetime counter remains in `counter.txt`; `session_encounter_count` starts at
+zero for each new session.
 
 ## Project Structure
 
@@ -92,17 +102,22 @@ Auto-Encounter-Counter-Pokemon/
 |   |   |-- modes.py
 |   |   |-- models.py
 |   |   |-- paths.py
+|   |   |-- regions.py
 |   |   |-- state_manager.py
 |   |   `-- templates.py
 |   |-- gui/
 |   |   |-- capture_settings_tab.py
 |   |   |-- dashboard_tab.py
+|   |   |-- filters_tab.py
 |   |   |-- logs_tab.py
 |   |   |-- main_window.py
+|   |   |-- monitor_layout_widget.py
+|   |   |-- template_crop_dialog.py
 |   |   `-- templates_tab.py
 |   |-- services/
 |   |   |-- app_controller.py
 |   |   |-- config_service.py
+|   |   |-- session_service.py
 |   |   `-- worker.py
 |   `-- main.py
 |-- config.json
@@ -245,7 +260,7 @@ cd <repo-root>
 
 Main operating view for:
 
-- mode selection
+- game selection and numbered sessions
 - encounter increment
 - start and stop controls
 - live counters
@@ -256,10 +271,19 @@ Main operating view for:
 
 Used for:
 
-- editing per-mode screen regions
-- testing screenshots
-- saving settings to `config.json`
-- restoring default regions
+- choosing the monitor used for capture
+- reviewing the latest filter preview
+- saving display settings to `config.json`
+
+### Filters
+
+Used for:
+
+- organizing filters by game
+- choosing event type, threshold, cooldown, and enabled state
+- creating a template from a full-monitor screenshot
+- moving and resizing the template crop before saving it
+- checking a live template-match score against the current preview
 
 ### Templates
 
@@ -268,6 +292,9 @@ Used for:
 - checking which required template files are present
 - identifying missing or unreadable templates
 - previewing template images
+
+Template creation lives in the Filters tab because it updates both the image
+file and the selected filter's search region.
 
 ### Logs / State
 
@@ -280,19 +307,24 @@ Used for:
 ## Typical User Flow
 
 1. Open the desktop application.
-2. Go to `Capture Settings`.
-3. Adjust the capture region for your mode if needed.
-4. Run `Test Screenshot` and confirm the preview looks correct.
-5. Save settings.
-6. Go to `Dashboard`.
-7. Choose the mode.
-8. Set the encounter increment.
-9. Click `Start`.
-10. Click `Stop` when finished.
+2. Go to `Capture Settings` and choose the monitor containing the game.
+3. Open `Filters`, select the game and the filter you want to configure.
+4. Click `Make Template` and drag the yellow rectangle tightly around the
+   battle text. Drag inside it to move it or use its handles to resize it.
+5. Keep the default search padding or adjust it if the text can move slightly.
+6. Save the template, then run `Capture Preview` to see its live match score.
+7. Enable the filter when its preview is reliable.
+8. Go to `Dashboard`, set the encounter increment, and click `Start`.
+9. Click `Stop` when finished.
 
 ## Templates
 
-Current required templates by mode:
+Templates can be created and replaced from the Filters tab. The selected crop
+is saved tightly around the text; the app automatically expands the filter's
+capture region using the chosen search padding. This lets OpenCV search for the
+text within a small area instead of requiring exact manual pixel coordinates.
+
+Starter template names by mode:
 
 - Random grass encounter:
   - `got_away.png`
@@ -302,7 +334,28 @@ Current required templates by mode:
 - Egg mode:
   - `huh.png`
 
-If a required template is missing or unreadable, the application surfaces that in the Templates tab and through runtime error handling.
+Egg counting remains supported when `huh.png` has not been created yet: select
+the Huh filter and make it from a live monitor preview. If a required template
+is missing or unreadable, the application surfaces that in the Templates tab
+and through runtime error handling.
+
+## Games and Sessions
+
+The lifetime encounter and catch counters never reset when a session changes.
+A session adds a second counter for a particular stretch of play:
+
+- switching to another game starts a new session for that game
+- `New Session` on the Dashboard starts another session for the current game
+- stopping and restarting scanning continues the current session
+- every new event stores game and session identity alongside the existing data
+
+Events created before session tracking are retained as session 1. During the
+one-time migration the original CSV and JSONL files are copied to
+`output/migration_backups/session_identity_v1/`. The application then begins
+session 2 at the existing lifetime counter without resetting encounters or
+catches. The pre-migration `state.json` and `counter.txt` are retained in the
+same versioned backup folder. Older configuration versions are backed up under
+`output/migration_backups/config_<old>_to_v<new>/` before normalization.
 
 ## Configuration
 
@@ -313,10 +366,10 @@ The main local config file is:
 
 It stores:
 
-- last selected mode
+- active game
 - encounter increment
 - debug preferences
-- per-mode capture regions
+- per-filter templates, capture regions, thresholds, and cooldowns
 
 Notes:
 
@@ -327,13 +380,26 @@ Notes:
 
 - This is still an **Alpha** release.
 - `Soft reset` is not implemented yet.
-- `Egg mode` is wired into the application structure, but requires `templates/huh.png` to be present.
-- There is no interactive drag-to-select region picker yet.
+- Egg mode needs a `huh.png` made from the user's own game preview before its
+  filter can be enabled.
+- The template picker uses a full-monitor screenshot inside the application; a
+  transparent live desktop overlay may be considered later.
 - There is no cloud sync, OCR, or overlay tool in this version.
 
 ## Development Notes
 
 The current design is intended to make future expansion easier.
+
+Run the built-in test suite from the project root with:
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
+```
+
+Persistent JSON and text files are written through a flushed same-directory
+temporary file and replaced atomically. `output/event_log.jsonl` is the
+authoritative event history; `output/encounter_log.csv` is checked against it
+at startup and rebuilt automatically when rows or fields differ.
 
 Adding a new mode should mainly involve:
 
@@ -358,6 +424,13 @@ Build the packaged app:
 uv run --extra build pyinstaller pokemon-encounter-counter.spec --noconfirm
 ```
 
+Run the non-capturing source or packaged smoke test with:
+
+```powershell
+uv run python -B -m app.main --smoke-test
+dist\PokemonEncounterCounter\PokemonEncounterCounter.exe --smoke-test
+```
+
 The packaged output is written to:
 
 ```text
@@ -369,6 +442,9 @@ Notes:
 - the build uses a one-folder layout so bundled templates live next to the executable
 - built-in templates are bundled automatically
 - `output/` is created on first run
+- `.github/workflows/windows-ci.yml` tests on Python 3.14, runs Qt offscreen,
+  builds the application, smoke-tests the executable, and uploads the folder
+  as a workflow artifact
 - `config.json` is created on first run if it does not already exist
 
 ## License

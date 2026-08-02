@@ -26,17 +26,24 @@
       "event_type": "encounter_start",
       "template_path": "wild.png",
       "capture_region": {
-        "left": 250,
-        "top": 1000,
-        "width": 300,
-        "height": 171
+        "left": 1040,
+        "top": 237,
+        "width": 716,
+        "height": 379
       },
       "threshold": 0.85,
       "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Encounter-start filter for Safari-style wild battle text.",
       "metadata": {
-        "game_id": "testgamefilters"
+        "game_id": "testgamefilters",
+        "template_region": {
+          "left": 1060,
+          "top": 257,
+          "width": 676,
+          "height": 339
+        },
+        "search_padding": 20
       }
     },
     {
@@ -95,46 +102,6 @@
       "cooldown_seconds": 5.0,
       "built_in": true,
       "description": "Egg encounter event filter based on the huh prompt.",
-      "metadata": {
-        "game_id": "testgamefilters"
-      }
-    },
-    {
-      "id": "new_filter_5",
-      "name": "Fullscreen",
-      "enabled": false,
-      "event_type": "label",
-      "template_path": "new_filter_5.png",
-      "capture_region": {
-        "left": 0,
-        "top": 0,
-        "width": 2560,
-        "height": 1440
-      },
-      "threshold": 0.85,
-      "cooldown_seconds": 5.0,
-      "built_in": false,
-      "description": "Custom filter.",
-      "metadata": {
-        "game_id": "testgamefilters"
-      }
-    },
-    {
-      "id": "new_filter_6",
-      "name": "Fullscreen2",
-      "enabled": false,
-      "event_type": "info",
-      "template_path": "new_filter_6.png",
-      "capture_region": {
-        "left": 0,
-        "top": 0,
-        "width": 2560,
-        "height": 1440
-      },
-      "threshold": 0.85,
-      "cooldown_seconds": 5.0,
-      "built_in": false,
-      "description": "Custom filter.",
       "metadata": {
         "game_id": "testgamefilters"
       }

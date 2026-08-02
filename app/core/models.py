@@ -31,11 +31,32 @@ class FilterRuntimeState:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class SessionContext:
+    game_id: str
+    game_name: str
+    session_id: str
+    session_number: int
+    session_started_at: str
+    session_start_counter: int
+    session_encounter_count: int = 0
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
 @dataclass
 class CounterSnapshot:
     status: str
     mode_key: str
     mode_name: str
+    game_id: str
+    game_name: str
+    session_id: str
+    session_number: int
+    session_started_at: str
+    session_start_counter: int
+    session_encounter_count: int
     encounter_increment: int
     enabled_filter_count: int
     counter: int

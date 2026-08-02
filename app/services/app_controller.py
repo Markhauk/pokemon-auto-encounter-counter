@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from typing import Optional
 
@@ -17,11 +16,13 @@ from app.core.display import (
 )
 from app.core.event_logger import EventLogger
 from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition, GameDefinition
-from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR
+from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR, TEMPLATE_SOURCE_FILE
+from app.core.regions import clamp_region, expand_region
 from app.core.state_manager import StateManager
 from app.core.templates import TemplateManager
 
 from .config_service import ConfigService
+from .session_service import SessionService
 from .worker import DetectionRequest, DetectionWorker
 
 
@@ -31,6 +32,7 @@ class AppController(QObject):
     log_received = Signal(dict)
     error_occurred = Signal(str)
     preview_captured = Signal(dict)
+    session_changed = Signal(dict)
     config_changed = Signal(dict)
 
     def __init__(
@@ -40,17 +42,25 @@ class AppController(QObject):
         state_manager: Optional[StateManager] = None,
         event_logger: Optional[EventLogger] = None,
         template_manager: Optional[TemplateManager] = None,
+        session_service: Optional[SessionService] = None,
     ) -> None:
         super().__init__()
         self.config_service = config_service or ConfigService()
         self.state_manager = state_manager or StateManager()
         self.event_logger = event_logger or EventLogger()
         self.template_manager = template_manager or TemplateManager()
+        self.session_service = session_service or SessionService(
+            config_service=self.config_service,
+            state_manager=self.state_manager,
+            event_logger=self.event_logger,
+        )
 
         self._thread: QThread | None = None
         self._worker: DetectionWorker | None = None
         self._runtime_status = "Idle"
         self._current_snapshot: dict[str, object] | None = None
+
+        self._session_context, self._session_migration = self.session_service.initialize()
 
         self.config_changed.emit(self.get_config())
 
@@ -71,18 +81,24 @@ class AppController(QObject):
 
     def set_active_game_id(self, game_id: str) -> dict[str, object]:
         saved = self.config_service.set_active_game_id(game_id)
+        self._session_context = self.session_service.ensure_for_active_game()
+        self.session_changed.emit(self._session_context.as_dict())
         self.config_changed.emit(saved)
         self._emit_idle_snapshot_if_needed()
         return saved
 
     def create_game(self, *, name: str | None = None) -> GameDefinition:
         game_definition = self.config_service.create_game(name=name)
+        self._session_context = self.session_service.ensure_for_active_game()
+        self.session_changed.emit(self._session_context.as_dict())
         self.config_changed.emit(self.get_config())
         self._emit_idle_snapshot_if_needed()
         return game_definition
 
     def delete_game(self, game_id: str) -> dict[str, object]:
         saved = self.config_service.delete_game(game_id)
+        self._session_context = self.session_service.ensure_for_active_game()
+        self.session_changed.emit(self._session_context.as_dict())
         self.config_changed.emit(saved)
         self._emit_idle_snapshot_if_needed()
         return saved
@@ -141,6 +157,22 @@ class AppController(QObject):
     def get_debug_frame_path(self) -> str:
         return str(DEBUG_FRAME_FILE)
 
+    def get_session_context(self) -> dict[str, object]:
+        current = self.session_service.current_context()
+        if current is None:
+            current, _ = self.session_service.initialize()
+        self._session_context = current
+        return current.as_dict()
+
+    def start_new_session(self) -> dict[str, object]:
+        if self.is_running():
+            raise RuntimeError("Stop scanning before starting a new session.")
+        self._session_context = self.session_service.start_new_session()
+        payload = self._session_context.as_dict()
+        self.session_changed.emit(payload)
+        self._emit_idle_snapshot_if_needed()
+        return payload
+
     def get_monitors(self) -> list[dict[str, int]]:
         return get_monitors()
 
@@ -184,6 +216,26 @@ class AppController(QObject):
         save_image(DEBUG_FRAME_FILE, frame_bgr)
         gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         stats = compute_brightness_stats(gray)
+        template_match: dict[str, object]
+        try:
+            template = self.template_manager.load_grayscale(filter_definition.template_path)
+            if template.shape[0] > gray.shape[0] or template.shape[1] > gray.shape[1]:
+                template_match = {
+                    "available": False,
+                    "error": "Template is larger than the configured capture region.",
+                }
+            else:
+                result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+                _, max_score, _, _ = cv2.minMaxLoc(result)
+                template_match = {
+                    "available": True,
+                    "score": round(float(max_score), 6),
+                    "threshold": float(filter_definition.threshold),
+                    "found": bool(max_score >= filter_definition.threshold),
+                }
+        except Exception as exc:
+            template_match = {"available": False, "error": str(exc)}
+
         payload = {
             "filter_id": filter_definition.id,
             "filter_name": filter_definition.name,
@@ -200,22 +252,123 @@ class AppController(QObject):
                 "std": round(stats.std_value, 2),
                 "nonzero_ratio": round(stats.nonzero_ratio, 4),
             },
+            "template_match": template_match,
         }
         self.preview_captured.emit(payload)
         return payload
 
-    def save_filter_template_from_preview(self, filter_id: str) -> str:
+    def capture_template_source(self, filter_id: str) -> dict[str, object]:
+        if self.is_running():
+            raise RuntimeError("Stop scanning before creating a template.")
         filter_definition = self.get_filter(filter_id)
         if filter_definition is None:
             raise ValueError(f"Unknown filter: {filter_id}")
-        if not DEBUG_FRAME_FILE.exists():
-            raise FileNotFoundError("No preview image exists yet. Capture a preview first.")
+
+        monitor = self.get_selected_capture_monitor()
+        monitor_region = {
+            "left": int(monitor["left"]),
+            "top": int(monitor["top"]),
+            "width": int(monitor["width"]),
+            "height": int(monitor["height"]),
+        }
+        frame_bgr = grab_region(monitor_region)
+        save_image(TEMPLATE_SOURCE_FILE, frame_bgr)
+        bounds_width = int(monitor["width"])
+        bounds_height = int(monitor["height"])
+
+        raw_template_region = filter_definition.metadata.get("template_region")
+        if not isinstance(raw_template_region, dict):
+            raw_template_region = filter_definition.capture_region
+        initial_region = clamp_region(
+            {
+                "left": int(raw_template_region.get("left", 0)),
+                "top": int(raw_template_region.get("top", 0)),
+                "width": int(raw_template_region.get("width", 1)),
+                "height": int(raw_template_region.get("height", 1)),
+            },
+            bounds_width=bounds_width,
+            bounds_height=bounds_height,
+        )
+        return {
+            "filter_id": filter_definition.id,
+            "filter_name": filter_definition.name,
+            "source_path": str(TEMPLATE_SOURCE_FILE),
+            "monitor": dict(monitor),
+            "monitor_summary": format_monitor_summary(monitor),
+            "initial_region": initial_region,
+            "search_padding": max(0, int(filter_definition.metadata.get("search_padding", 20))),
+        }
+
+    def save_template_crop(
+        self,
+        *,
+        filter_id: str,
+        template_region: dict[str, int],
+        search_padding: int,
+    ) -> dict[str, object]:
+        filter_definition = self.get_filter(filter_id)
+        if filter_definition is None:
+            raise ValueError(f"Unknown filter: {filter_id}")
+        if not TEMPLATE_SOURCE_FILE.exists():
+            raise FileNotFoundError("The full-monitor template source is no longer available.")
+
+        source = cv2.imread(str(TEMPLATE_SOURCE_FILE), cv2.IMREAD_COLOR)
+        if source is None:
+            raise RuntimeError("OpenCV could not read the template source screenshot.")
+        source_height, source_width = source.shape[:2]
+        selected = clamp_region(
+            template_region,
+            bounds_width=source_width,
+            bounds_height=source_height,
+        )
+        x1 = selected["left"]
+        y1 = selected["top"]
+        x2 = x1 + selected["width"]
+        y2 = y1 + selected["height"]
+        cropped = source[y1:y2, x1:x2].copy()
+        gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+        stats = compute_brightness_stats(gray)
+        if stats.std_value < 1.0:
+            raise ValueError("The selected template is nearly uniform. Select the visible battle text more tightly.")
 
         destination = self.template_manager.get_path(filter_definition.template_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(DEBUG_FRAME_FILE, destination)
-        self.config_changed.emit(self.get_config())
-        return str(destination)
+        save_image(destination, cropped)
+        capture_region = expand_region(
+            selected,
+            padding=search_padding,
+            bounds_width=source_width,
+            bounds_height=source_height,
+        )
+        metadata = dict(filter_definition.metadata)
+        metadata["template_region"] = dict(selected)
+        metadata["search_padding"] = max(0, int(search_padding))
+        updated_filter = FilterDefinition(
+            id=filter_definition.id,
+            name=filter_definition.name,
+            enabled=filter_definition.enabled,
+            event_type=filter_definition.event_type,
+            template_path=filter_definition.template_path,
+            capture_region=capture_region,
+            threshold=filter_definition.threshold,
+            cooldown_seconds=filter_definition.cooldown_seconds,
+            built_in=filter_definition.built_in,
+            description=filter_definition.description,
+            metadata=metadata,
+        )
+        saved = self.config_service.replace_filter(updated_filter)
+        self.config_changed.emit(saved)
+        self._emit_idle_snapshot_if_needed()
+        return {
+            "path": str(destination),
+            "template_region": selected,
+            "capture_region": capture_region,
+            "stats": {
+                "mean": round(stats.mean_value, 2),
+                "std": round(stats.std_value, 2),
+                "min": stats.min_value,
+                "max": stats.max_value,
+            },
+        }
 
     def save_capture_settings(
         self,
@@ -312,6 +465,7 @@ class AppController(QObject):
             encounter_increment=max(1, int(encounter_increment)),
             save_debug_frames=save_debug_frames,
             verbose_debug=verbose_debug,
+            session_context=self.session_service.ensure_for_active_game(),
         )
 
         self._thread = QThread(self)
@@ -366,6 +520,13 @@ class AppController(QObject):
             "mode_name": f"{active_game.name} scan" if active_game is not None else "Filter scan",
             "active_game_id": active_game_id,
             "active_game_name": active_game.name if active_game is not None else active_game_id,
+            "game_id": str(state.get("game_id", active_game_id)),
+            "game_name": str(state.get("game_name", active_game.name if active_game is not None else active_game_id)),
+            "session_id": str(state.get("session_id", "")),
+            "session_number": int(state.get("session_number", 0)),
+            "session_started_at": str(state.get("session_started_at", "")),
+            "session_start_counter": int(state.get("session_start_counter", 0)),
+            "session_encounter_count": int(state.get("session_encounter_count", 0)),
             "encounter_increment": int(state.get("encounter_increment", self.config_service.get_encounter_increment())),
             "enabled_filter_count": len([filter_definition for filter_definition in filters if filter_definition.enabled]),
             "counter": int(state.get("counter", 0)),
@@ -388,6 +549,8 @@ class AppController(QObject):
         }
 
     def _handle_worker_status(self, snapshot: dict[str, object]) -> None:
+        snapshot.setdefault("active_game_id", snapshot.get("game_id", ""))
+        snapshot.setdefault("active_game_name", snapshot.get("game_name", ""))
         self._current_snapshot = snapshot
         next_status = str(snapshot.get("status", "Idle"))
         if next_status != self._runtime_status:

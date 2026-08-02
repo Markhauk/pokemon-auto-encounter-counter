@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-project_root = Path(__file__).resolve().parent
+project_root = Path(SPECPATH).resolve()
 template_dir = project_root / "templates"
 builtin_template_names = (
     "got_away.png",
@@ -47,6 +47,7 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
+    contents_directory=".",
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
