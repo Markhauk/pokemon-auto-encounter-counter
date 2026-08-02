@@ -5,6 +5,7 @@ from pathlib import Path
 
 project_root = Path(SPECPATH).resolve()
 template_dir = project_root / "templates"
+frame_asset_dir = project_root / "assets" / "frames"
 builtin_template_names = (
     "got_away.png",
     "gotcha.png",
@@ -18,6 +19,9 @@ for template_name in builtin_template_names:
     template_path = template_dir / template_name
     if template_path.exists():
         datas.append((str(template_path), "templates"))
+
+for frame_asset in sorted(frame_asset_dir.glob("frame_*.png")):
+    datas.append((str(frame_asset), "assets/frames"))
 
 
 a = Analysis(

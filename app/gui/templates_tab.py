@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
 
 from app.services.app_controller import AppController
 
+from .frame_styles import mark_as_interface_frame
+
 
 class TemplatesTab(QWidget):
     def __init__(self, controller: AppController) -> None:
@@ -47,6 +49,7 @@ class TemplatesTab(QWidget):
         left_panel.addWidget(self.table, 1)
 
         preview_group = QGroupBox("Template Preview")
+        mark_as_interface_frame(preview_group)
         preview_layout = QVBoxLayout(preview_group)
         self.preview_label = QLabel("Select a template row to preview it.")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

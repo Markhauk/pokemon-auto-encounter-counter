@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.core.display import format_monitor_summary, normalize_display_setup
 from app.services.app_controller import AppController
 
+from .frame_styles import mark_as_interface_frame
 from .monitor_layout_widget import MonitorLayoutWidget
 
 
@@ -37,6 +38,7 @@ class CaptureSettingsTab(QWidget):
         right_panel = QVBoxLayout()
 
         display_group = QGroupBox("Display Setup")
+        mark_as_interface_frame(display_group)
         display_layout = QVBoxLayout(display_group)
 
         self.display_help_label = QLabel(
@@ -67,6 +69,7 @@ class CaptureSettingsTab(QWidget):
         display_layout.addStretch(1)
 
         preview_group = QGroupBox("Last Preview")
+        mark_as_interface_frame(preview_group)
         preview_layout = QVBoxLayout(preview_group)
         self.preview_label = QLabel("Use the Filters tab to capture a preview for a selected filter.")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

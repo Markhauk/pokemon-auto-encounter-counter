@@ -70,6 +70,14 @@ class AppController(QObject):
     def get_display_setup(self) -> dict[str, object]:
         return self.config_service.get_display_setup()
 
+    def get_interface_frame_type(self) -> int:
+        return self.config_service.get_interface_frame_type()
+
+    def set_interface_frame_type(self, frame_type: object) -> dict[str, object]:
+        saved = self.config_service.set_interface_frame_type(frame_type)
+        self.config_changed.emit(saved)
+        return saved
+
     def get_games(self) -> list[GameDefinition]:
         return self.config_service.get_games()
 

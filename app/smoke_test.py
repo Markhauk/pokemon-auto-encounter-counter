@@ -12,11 +12,14 @@ def run_smoke_test() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
     try:
+        from PySide6.QtGui import QImage
         from PySide6.QtWidgets import QApplication, QLabel
 
         from app.core.event_logger import EventLogger
         from app.core.file_io import atomic_write_text
+        from app.core.interface import INTERFACE_FRAME_DEFINITIONS
         from app.core.models import SessionContext
+        from app.core.paths import INTERFACE_FRAMES_DIR
         from app.core.templates import TemplateManager
         from app.services.config_service import ConfigService
         from app.core.state_manager import StateManager
@@ -32,6 +35,12 @@ def run_smoke_test() -> int:
         required_templates = ("got_away.png", "gotcha.png", "wild.png")
         for template_name in required_templates:
             template_manager.load_grayscale(template_name)
+
+        for definition in INTERFACE_FRAME_DEFINITIONS:
+            frame_asset = INTERFACE_FRAMES_DIR / definition.asset_filename
+            image = QImage(str(frame_asset))
+            if image.isNull() or image.width() != 40 or image.height() != 40:
+                raise RuntimeError(f"Interface frame asset is missing or invalid: {frame_asset}")
 
         with tempfile.TemporaryDirectory(prefix="pokemon-counter-smoke-") as temp_dir:
             root = Path(temp_dir)
@@ -84,6 +93,7 @@ def run_smoke_test() -> int:
                 "qt_platform": os.environ["QT_QPA_PLATFORM"],
                 "config_version": config.get("version"),
                 "templates_checked": list(required_templates),
+                "interface_frames_checked": len(INTERFACE_FRAME_DEFINITIONS),
             }
 
         probe_widget.close()

@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 
 from app.services.app_controller import AppController
 
+from .frame_styles import mark_as_interface_frame
+
 
 class LogsTab(QWidget):
     def __init__(self, controller: AppController) -> None:
@@ -28,6 +30,7 @@ class LogsTab(QWidget):
         root_layout = QVBoxLayout(self)
 
         summary_group = QGroupBox("Logs and State")
+        mark_as_interface_frame(summary_group)
         summary_layout = QFormLayout(summary_group)
         self.current_counter_value = QLabel("0")
         self.current_catch_value = QLabel("0")

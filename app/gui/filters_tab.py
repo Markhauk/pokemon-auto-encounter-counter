@@ -28,6 +28,7 @@ from app.core.constants import POST_DETECTION_COOLDOWN_SECONDS
 from app.core.filters import FilterDefinition, GameDefinition
 from app.services.app_controller import AppController
 
+from .frame_styles import mark_as_interface_frame
 from .template_crop_dialog import TemplateCropDialog
 
 
@@ -51,6 +52,7 @@ class FiltersTab(QWidget):
         right_panel = QVBoxLayout()
 
         game_group = QGroupBox("Games")
+        mark_as_interface_frame(game_group)
         game_layout = QVBoxLayout(game_group)
         game_controls = QHBoxLayout()
         self.game_combo = QComboBox()
@@ -67,19 +69,23 @@ class FiltersTab(QWidget):
         game_layout.addLayout(game_controls)
         game_layout.addWidget(self.game_help_label)
 
+        filter_list_group = QGroupBox("Configured Filters")
+        mark_as_interface_frame(filter_list_group)
+        filter_list_layout = QVBoxLayout(filter_list_group)
         self.filter_list = QListWidget()
+        filter_list_layout.addWidget(self.filter_list)
         self.add_button = QPushButton("Add Filter")
         self.delete_button = QPushButton("Delete Filter")
         self.refresh_button = QPushButton("Refresh")
 
         left_panel.addWidget(game_group)
-        left_panel.addWidget(QLabel("Configured Filters"))
-        left_panel.addWidget(self.filter_list, 1)
+        left_panel.addWidget(filter_list_group, 1)
         left_panel.addWidget(self.add_button)
         left_panel.addWidget(self.delete_button)
         left_panel.addWidget(self.refresh_button)
 
         editor_group = QGroupBox("Filter Details")
+        mark_as_interface_frame(editor_group)
         editor_layout = QVBoxLayout(editor_group)
         form = QFormLayout()
 
@@ -136,6 +142,7 @@ class FiltersTab(QWidget):
         editor_layout.addWidget(self.filter_status_label)
 
         preview_group = QGroupBox("Preview")
+        mark_as_interface_frame(preview_group)
         preview_layout = QVBoxLayout(preview_group)
         self.preview_label = QLabel("Capture a preview for the selected filter.")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -21,6 +21,8 @@ from app.core.capture import capture_region_summary
 from app.core.display import format_monitor_summary
 from app.services.app_controller import AppController
 
+from .frame_styles import mark_as_interface_frame
+
 
 class DashboardTab(QWidget):
     def __init__(self, controller: AppController) -> None:
@@ -35,6 +37,7 @@ class DashboardTab(QWidget):
         self._loading = False
 
         controls_group = QGroupBox("Scanner Controls")
+        mark_as_interface_frame(controls_group)
         controls_layout = QGridLayout(controls_group)
 
         self.game_combo = QComboBox()
@@ -69,6 +72,7 @@ class DashboardTab(QWidget):
         summary_row = QHBoxLayout()
 
         counters_group = QGroupBox("Counters")
+        mark_as_interface_frame(counters_group)
         counters_layout = QFormLayout(counters_group)
         self.encounter_value = QLabel("0")
         self.catch_value = QLabel("0")
@@ -82,6 +86,7 @@ class DashboardTab(QWidget):
         counters_layout.addRow("Last match score", self.last_score_value)
 
         details_group = QGroupBox("Live Details")
+        mark_as_interface_frame(details_group)
         details_layout = QFormLayout(details_group)
         self.active_game_value = QLabel("N/A")
         self.enabled_filters_value = QLabel("0")
@@ -106,6 +111,7 @@ class DashboardTab(QWidget):
         summary_row.addWidget(details_group, 1)
 
         log_group = QGroupBox("Live Runtime Log")
+        mark_as_interface_frame(log_group)
         log_layout = QVBoxLayout(log_group)
         self.log_box = QPlainTextEdit()
         self.log_box.setReadOnly(True)

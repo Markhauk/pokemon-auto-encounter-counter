@@ -25,11 +25,12 @@ from app.core.filters import (
     slugify_game_name,
 )
 from app.core.file_io import atomic_write_text
+from app.core.interface import DEFAULT_FRAME_TYPE, normalize_frame_type
 from app.core.modes import get_default_capture_region, list_modes
 from app.core.paths import CONFIG_FILE
 
 
-CONFIG_VERSION = 7
+CONFIG_VERSION = 8
 
 
 def _read_physical_monitors() -> list[dict[str, int]]:
@@ -68,6 +69,9 @@ def build_default_config() -> dict[str, object]:
         "debug": {
             "save_debug_frames": False,
             "verbose_debug": False,
+        },
+        "interface": {
+            "frame_type": DEFAULT_FRAME_TYPE,
         },
         "display_setup": display_setup,
         "games": [
@@ -108,6 +112,12 @@ class ConfigService:
         physical_monitors = self.get_physical_monitors()
 
         config["version"] = CONFIG_VERSION
+        interface = config.get("interface", {})
+        if not isinstance(interface, dict):
+            interface = {}
+        config["interface"] = {
+            "frame_type": normalize_frame_type(interface.get("frame_type")),
+        }
         config["display_setup"] = normalize_display_setup(
             config.get("display_setup"),
             physical_monitors=physical_monitors,
@@ -320,6 +330,20 @@ class ConfigService:
         config["debug"] = {
             "save_debug_frames": bool(save_debug_frames),
             "verbose_debug": bool(verbose_debug),
+        }
+        return self.save(config)
+
+    def get_interface_frame_type(self) -> int:
+        config = self.load()
+        interface = config.get("interface", {})
+        if not isinstance(interface, dict):
+            return DEFAULT_FRAME_TYPE
+        return normalize_frame_type(interface.get("frame_type"))
+
+    def set_interface_frame_type(self, frame_type: object) -> dict[str, object]:
+        config = self.load()
+        config["interface"] = {
+            "frame_type": normalize_frame_type(frame_type),
         }
         return self.save(config)
 

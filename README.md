@@ -317,6 +317,17 @@ Used for:
 8. Go to `Dashboard`, set the encounter increment, and click `Start`.
 9. Click `Stop` when finished.
 
+## Interface Frames
+
+The Settings tab includes a live Generation 3-style frame selector with all 20
+frame types. Each option uses a pixel-art nine-slice asset so its original
+corners and repeating edge details stay sharp without stretching across large
+desktop panels. The selected frame is applied to the main sections throughout
+the application: Scanner Controls, Counters, Live Details, Live Runtime Log,
+Games, Configured Filters, Filter Details, Preview, Display Setup, Last Preview,
+Template Preview, and Logs and State. Existing buttons are unchanged, and the
+choice is saved in `config.json` for the next launch.
+
 ## Templates
 
 Templates can be created and replaced from the Filters tab. The selected crop

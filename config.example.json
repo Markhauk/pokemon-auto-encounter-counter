@@ -1,11 +1,14 @@
 {
-  "version": 7,
+  "version": 8,
   "last_selected_mode": "filters",
   "active_game_id": "testgamefilters",
   "encounter_increment": 1,
   "debug": {
     "save_debug_frames": false,
     "verbose_debug": false
+  },
+  "interface": {
+    "frame_type": 1
   },
   "display_setup": {
     "capture_monitor_index": 1

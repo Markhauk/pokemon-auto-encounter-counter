@@ -12,6 +12,7 @@ def resolve_base_dir() -> Path:
 
 BASE_DIR = resolve_base_dir()
 TEMPLATES_DIR = BASE_DIR / "templates"
+INTERFACE_FRAMES_DIR = BASE_DIR / "assets" / "frames"
 OUTPUT_DIR = BASE_DIR / "output"
 CONFIG_FILE = BASE_DIR / "config.json"
 
