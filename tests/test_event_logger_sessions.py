@@ -76,6 +76,24 @@ class EventLoggerSessionMigrationTests(unittest.TestCase):
             self.assertEqual(second_result.migrated_count, 0)
             self.assertEqual(second_result.event_count, 2)
 
+            hunt_result = logger.migrate_legacy_hunt(
+                hunt_id="pokemon_red-hunt-0001",
+                hunt_name="Original Hunt",
+                hunt_started_at="2026-01-01T00:00:00Z",
+            )
+            self.assertEqual(hunt_result.migrated_count, 2)
+            migrated_hunts = [
+                json.loads(line)
+                for line in jsonl_file.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(migrated_hunts[0]["hunt_name"], "Original Hunt")
+            self.assertEqual(migrated_hunts[1]["hunt_encounter_count"], 11)
+            self.assertEqual(
+                migrated_hunts[0]["unknown_future_field"],
+                {"preserve": True},
+            )
+            self.assertTrue((Path(hunt_result.backup_dir) / "event_log.jsonl").exists())
+
     def test_invalid_json_aborts_before_rewriting(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

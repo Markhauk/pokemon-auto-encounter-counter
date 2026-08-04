@@ -145,6 +145,12 @@ class InterfaceFrameTests(unittest.TestCase):
                 }
                 self.assertEqual(framed_titles, expected_titles)
 
+            dashboard = expectations[0][0]
+            self.assertIsInstance(dashboard, DashboardTab)
+            self.assertEqual(dashboard.new_hunt_button.text(), "New Hunt...")
+            self.assertGreaterEqual(dashboard.hunt_combo.count(), 1)
+            self.assertEqual(dashboard.hunt_encounter_value.text(), "0")
+
     def test_styles_only_target_frame_group_boxes(self) -> None:
         type_1 = build_interface_frame_stylesheet(FRAME_TYPE_1)
         type_2 = build_interface_frame_stylesheet(FRAME_TYPE_2)

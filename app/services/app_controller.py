@@ -33,6 +33,7 @@ class AppController(QObject):
     error_occurred = Signal(str)
     preview_captured = Signal(dict)
     session_changed = Signal(dict)
+    hunt_changed = Signal(dict)
     config_changed = Signal(dict)
 
     def __init__(
@@ -90,7 +91,7 @@ class AppController(QObject):
     def set_active_game_id(self, game_id: str) -> dict[str, object]:
         saved = self.config_service.set_active_game_id(game_id)
         self._session_context = self.session_service.ensure_for_active_game()
-        self.session_changed.emit(self._session_context.as_dict())
+        self._emit_progress_context()
         self.config_changed.emit(saved)
         self._emit_idle_snapshot_if_needed()
         return saved
@@ -98,7 +99,7 @@ class AppController(QObject):
     def create_game(self, *, name: str | None = None) -> GameDefinition:
         game_definition = self.config_service.create_game(name=name)
         self._session_context = self.session_service.ensure_for_active_game()
-        self.session_changed.emit(self._session_context.as_dict())
+        self._emit_progress_context()
         self.config_changed.emit(self.get_config())
         self._emit_idle_snapshot_if_needed()
         return game_definition
@@ -106,7 +107,7 @@ class AppController(QObject):
     def delete_game(self, game_id: str) -> dict[str, object]:
         saved = self.config_service.delete_game(game_id)
         self._session_context = self.session_service.ensure_for_active_game()
-        self.session_changed.emit(self._session_context.as_dict())
+        self._emit_progress_context()
         self.config_changed.emit(saved)
         self._emit_idle_snapshot_if_needed()
         return saved
@@ -172,12 +173,39 @@ class AppController(QObject):
         self._session_context = current
         return current.as_dict()
 
+    def get_hunts(self, *, game_id: str | None = None) -> list[dict[str, object]]:
+        return [hunt.as_dict() for hunt in self.session_service.list_hunts(game_id=game_id)]
+
+    def get_active_hunt(self) -> dict[str, object]:
+        return self.session_service.active_hunt().as_dict()
+
+    def set_active_hunt_id(self, hunt_id: str) -> dict[str, object]:
+        if self.is_running():
+            raise RuntimeError("Stop scanning before switching hunts.")
+        self._session_context = self.session_service.select_hunt(hunt_id)
+        payload = self._session_context.as_dict()
+        self._emit_progress_context()
+        self._emit_idle_snapshot_if_needed()
+        return payload
+
+    def start_new_hunt(self, *, name: str, complete_current: bool) -> dict[str, object]:
+        if self.is_running():
+            raise RuntimeError("Stop scanning before starting a new hunt.")
+        self._session_context = self.session_service.start_new_hunt(
+            name=name,
+            complete_current=complete_current,
+        )
+        payload = self._session_context.as_dict()
+        self._emit_progress_context()
+        self._emit_idle_snapshot_if_needed()
+        return payload
+
     def start_new_session(self) -> dict[str, object]:
         if self.is_running():
             raise RuntimeError("Stop scanning before starting a new session.")
         self._session_context = self.session_service.start_new_session()
         payload = self._session_context.as_dict()
-        self.session_changed.emit(payload)
+        self._emit_progress_context()
         self._emit_idle_snapshot_if_needed()
         return payload
 
@@ -530,10 +558,22 @@ class AppController(QObject):
             "active_game_name": active_game.name if active_game is not None else active_game_id,
             "game_id": str(state.get("game_id", active_game_id)),
             "game_name": str(state.get("game_name", active_game.name if active_game is not None else active_game_id)),
+            "hunt_id": str(state.get("hunt_id", "")),
+            "hunt_name": str(state.get("hunt_name", "")),
+            "hunt_status": str(state.get("hunt_status", "active")),
+            "hunt_started_at": str(state.get("hunt_started_at", "")),
+            "hunt_completed_at": str(state.get("hunt_completed_at", "")),
+            "hunt_encounter_count": int(state.get("hunt_encounter_count", 0)),
+            "hunt_catch_counter": int(state.get("hunt_catch_counter", 0)),
+            "hunt_last_catch_at_encounter": int(state.get("hunt_last_catch_at_encounter", 0)),
+            "hunt_encounters_since_last_catch": int(
+                state.get("hunt_encounters_since_last_catch", 0)
+            ),
             "session_id": str(state.get("session_id", "")),
             "session_number": int(state.get("session_number", 0)),
             "session_started_at": str(state.get("session_started_at", "")),
             "session_start_counter": int(state.get("session_start_counter", 0)),
+            "session_start_hunt_counter": int(state.get("session_start_hunt_counter", 0)),
             "session_encounter_count": int(state.get("session_encounter_count", 0)),
             "encounter_increment": int(state.get("encounter_increment", self.config_service.get_encounter_increment())),
             "enabled_filter_count": len([filter_definition for filter_definition in filters if filter_definition.enabled]),
@@ -586,3 +626,8 @@ class AppController(QObject):
             return
         self._current_snapshot = self.build_idle_snapshot()
         self.snapshot_changed.emit(self._current_snapshot)
+
+    def _emit_progress_context(self) -> None:
+        payload = self._session_context.as_dict()
+        self.session_changed.emit(payload)
+        self.hunt_changed.emit(payload)

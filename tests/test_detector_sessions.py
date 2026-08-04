@@ -56,6 +56,12 @@ class DetectorSessionTests(unittest.TestCase):
                 session_number=2,
                 session_started_at="2026-01-02T00:00:00Z",
                 session_start_counter=100,
+                hunt_id="pokemon_red-hunt-0001",
+                hunt_name="Charmander",
+                hunt_started_at="2026-01-01T00:00:00Z",
+                hunt_encounter_count=40,
+                hunt_catch_counter=1,
+                session_start_hunt_counter=40,
             )
             engine = EncounterCounterEngine(
                 filters=[filter_definition],
@@ -69,6 +75,7 @@ class DetectorSessionTests(unittest.TestCase):
             engine.record_filter_event(filter_definition, 0.91)
 
             self.assertEqual(engine.counter, 103)
+            self.assertEqual(engine.hunt_encounter_count, 43)
             self.assertEqual(engine.session_encounter_count, 3)
             snapshot = engine.snapshot(status="Running")
             self.assertEqual(snapshot.game_id, "pokemon_red")
@@ -78,6 +85,9 @@ class DetectorSessionTests(unittest.TestCase):
             self.assertEqual(event["game_id"], "pokemon_red")
             self.assertEqual(event["session_id"], "pokemon_red-session-0002")
             self.assertEqual(event["session_encounter_count"], 3)
+            self.assertEqual(event["hunt_id"], "pokemon_red-hunt-0001")
+            self.assertEqual(event["hunt_encounter_count"], 43)
+            self.assertEqual(event["session_start_hunt_counter"], 40)
 
 
 if __name__ == "__main__":

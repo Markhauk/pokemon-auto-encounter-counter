@@ -94,6 +94,22 @@ class EncounterCounterEngine:
         self.session_started_at = session_context.session_started_at if session_context is not None else ""
         self.session_start_counter = session_context.session_start_counter if session_context is not None else 0
         self.session_encounter_count = session_context.session_encounter_count if session_context is not None else 0
+        self.hunt_id = session_context.hunt_id if session_context is not None else ""
+        self.hunt_name = session_context.hunt_name if session_context is not None else ""
+        self.hunt_status = session_context.hunt_status if session_context is not None else "active"
+        self.hunt_started_at = session_context.hunt_started_at if session_context is not None else ""
+        self.hunt_completed_at = session_context.hunt_completed_at if session_context is not None else ""
+        self.hunt_encounter_count = session_context.hunt_encounter_count if session_context is not None else 0
+        self.hunt_catch_counter = session_context.hunt_catch_counter if session_context is not None else 0
+        self.hunt_last_catch_at_encounter = (
+            session_context.hunt_last_catch_at_encounter if session_context is not None else 0
+        )
+        self.hunt_encounters_since_last_catch = (
+            session_context.hunt_encounters_since_last_catch if session_context is not None else 0
+        )
+        self.session_start_hunt_counter = (
+            session_context.session_start_hunt_counter if session_context is not None else 0
+        )
 
         configured_filters = list(filters or [])
         if not configured_filters and capture_region is not None:
@@ -155,6 +171,24 @@ class EncounterCounterEngine:
         self.session_start_counter = int(state.get("session_start_counter", self.session_start_counter))
         self.session_encounter_count = int(
             state.get("session_encounter_count", self.session_encounter_count)
+        )
+        self.hunt_id = str(state.get("hunt_id", self.hunt_id))
+        self.hunt_name = str(state.get("hunt_name", self.hunt_name))
+        self.hunt_status = str(state.get("hunt_status", self.hunt_status))
+        self.hunt_started_at = str(state.get("hunt_started_at", self.hunt_started_at))
+        self.hunt_completed_at = str(state.get("hunt_completed_at", self.hunt_completed_at))
+        self.hunt_encounter_count = int(
+            state.get("hunt_encounter_count", self.hunt_encounter_count)
+        )
+        self.hunt_catch_counter = int(state.get("hunt_catch_counter", self.hunt_catch_counter))
+        self.hunt_last_catch_at_encounter = int(
+            state.get("hunt_last_catch_at_encounter", self.hunt_last_catch_at_encounter)
+        )
+        self.hunt_encounters_since_last_catch = int(
+            state.get("hunt_encounters_since_last_catch", self.hunt_encounters_since_last_catch)
+        )
+        self.session_start_hunt_counter = int(
+            state.get("session_start_hunt_counter", self.session_start_hunt_counter)
         )
 
         filters_runtime = state.get("filters_runtime", {})
@@ -240,6 +274,16 @@ class EncounterCounterEngine:
                 for filter_id, runtime_state in self.filter_runtime.items()
             },
             error_message=error_message,
+            hunt_id=self.hunt_id,
+            hunt_name=self.hunt_name,
+            hunt_status=self.hunt_status,
+            hunt_started_at=self.hunt_started_at,
+            hunt_completed_at=self.hunt_completed_at,
+            hunt_encounter_count=self.hunt_encounter_count,
+            hunt_catch_counter=self.hunt_catch_counter,
+            hunt_last_catch_at_encounter=self.hunt_last_catch_at_encounter,
+            hunt_encounters_since_last_catch=self.hunt_encounters_since_last_catch,
+            session_start_hunt_counter=self.session_start_hunt_counter,
         )
 
     def emit_status(self, *, status: str, error_message: str = "") -> None:
@@ -277,10 +321,20 @@ class EncounterCounterEngine:
             "capture_height": filter_definition.capture_region["height"],
             "game_id": self.game_id,
             "game_name": self.game_name,
+            "hunt_id": self.hunt_id,
+            "hunt_name": self.hunt_name,
+            "hunt_status": self.hunt_status,
+            "hunt_started_at": self.hunt_started_at,
+            "hunt_completed_at": self.hunt_completed_at,
+            "hunt_encounter_count": self.hunt_encounter_count,
+            "hunt_catch_counter": self.hunt_catch_counter,
+            "hunt_last_catch_at_encounter": self.hunt_last_catch_at_encounter,
+            "hunt_encounters_since_last_catch": self.hunt_encounters_since_last_catch,
             "session_id": self.session_id,
             "session_number": self.session_number,
             "session_started_at": self.session_started_at,
             "session_start_counter": self.session_start_counter,
+            "session_start_hunt_counter": self.session_start_hunt_counter,
             "session_encounter_count": self.session_encounter_count,
         }
 
@@ -340,6 +394,11 @@ class EncounterCounterEngine:
             return max(0, self.counter - self.last_catch_at_encounter)
         return self.counter
 
+    def _calculate_hunt_encounters_since_last_catch(self) -> int:
+        if self.hunt_last_catch_at_encounter > 0:
+            return max(0, self.hunt_encounter_count - self.hunt_last_catch_at_encounter)
+        return self.hunt_encounter_count
+
     def record_filter_event(self, filter_definition: FilterDefinition, score: float) -> None:
         event_type = filter_definition.event_type
         self.last_event = event_type
@@ -353,16 +412,23 @@ class EncounterCounterEngine:
             self.active_label = filter_definition.name
         elif event_type == EVENT_TYPE_CATCH:
             self.counter += self.encounter_increment
+            self.hunt_encounter_count += self.encounter_increment
             self.session_encounter_count += self.encounter_increment
             self.catch_counter += 1
+            self.hunt_catch_counter += 1
             self.last_catch_at_encounter = self.counter
+            self.hunt_last_catch_at_encounter = self.hunt_encounter_count
             self.encounters_since_last_catch = 0
+            self.hunt_encounters_since_last_catch = 0
         elif event_type in {EVENT_TYPE_ENCOUNTER_START, EVENT_TYPE_FLED}:
             self.counter += self.encounter_increment
+            self.hunt_encounter_count += self.encounter_increment
             self.session_encounter_count += self.encounter_increment
             self.encounters_since_last_catch = self._calculate_encounters_since_last_catch()
+            self.hunt_encounters_since_last_catch = self._calculate_hunt_encounters_since_last_catch()
         elif event_type == EVENT_TYPE_INFO:
             self.encounters_since_last_catch = self._calculate_encounters_since_last_catch()
+            self.hunt_encounters_since_last_catch = self._calculate_hunt_encounters_since_last_catch()
 
         runtime_state = self._runtime_state_for(filter_definition.id)
         runtime_state.last_match_score = score
@@ -376,13 +442,13 @@ class EncounterCounterEngine:
         prefix = f"{filter_definition.name.upper()} [{filter_definition.event_type}]"
         if filter_definition.event_type == EVENT_TYPE_CATCH:
             return (
-                f"{prefix} | +{self.encounter_increment} encounters={self.counter} "
-                f"catches={self.catch_counter} score={score:.3f}"
+                f"{prefix} | +{self.encounter_increment} hunt={self.hunt_encounter_count} "
+                f"all_time={self.counter} hunt_catches={self.hunt_catch_counter} score={score:.3f}"
             )
         if filter_definition.event_type in {EVENT_TYPE_ENCOUNTER_START, EVENT_TYPE_FLED}:
             return (
-                f"{prefix} | +{self.encounter_increment} encounters={self.counter} "
-                f"catches={self.catch_counter} since_last_catch={self.encounters_since_last_catch} "
+                f"{prefix} | +{self.encounter_increment} hunt={self.hunt_encounter_count} "
+                f"all_time={self.counter} since_hunt_catch={self.hunt_encounters_since_last_catch} "
                 f"score={score:.3f}"
             )
         if filter_definition.event_type == EVENT_TYPE_LABEL:

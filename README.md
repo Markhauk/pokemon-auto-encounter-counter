@@ -32,7 +32,8 @@ What that means:
 - In-app template creator with a draggable and resizable crop selection
 - Automatic padded search regions around tightly cropped text templates
 - Live template-match score in the preview workflow
-- Game identity and numbered sessions without resetting the lifetime counter
+- Named, resumable hunts with their own counters under each game
+- Game and hunt identity plus numbered sessions without resetting all-time totals
 - Template status and preview tab
 - Local logs and state viewer
 - Single-instance protection while scanning
@@ -84,9 +85,10 @@ The application continues to use these files:
 - `output/template_source.png`
 - `output/encounter_counter.lock`
 
-`state.json`, CSV, and JSONL events include the active game and session. The
-lifetime counter remains in `counter.txt`; `session_encounter_count` starts at
-zero for each new session.
+`state.json`, CSV, and JSONL events include the active game, hunt, and session.
+`state.json` also keeps every hunt and its saved totals. The all-time encounter
+counter remains mirrored in `counter.txt`; hunt and session counters can start
+at zero without changing that all-time total.
 
 ## Project Structure
 
@@ -112,6 +114,7 @@ Auto-Encounter-Counter-Pokemon/
 |   |   |-- logs_tab.py
 |   |   |-- main_window.py
 |   |   |-- monitor_layout_widget.py
+|   |   |-- new_hunt_dialog.py
 |   |   |-- template_crop_dialog.py
 |   |   `-- templates_tab.py
 |   |-- services/
@@ -260,7 +263,8 @@ cd <repo-root>
 
 Main operating view for:
 
-- game selection and numbered sessions
+- game and hunt selection plus numbered sessions
+- starting a named hunt while preserving completed or paused hunts
 - encounter increment
 - start and stop controls
 - live counters
@@ -316,6 +320,9 @@ Used for:
 7. Enable the filter when its preview is reliable.
 8. Go to `Dashboard`, set the encounter increment, and click `Start`.
 9. Click `Stop` when finished.
+10. After finishing a shiny hunt, click `New Hunt...`, name the next hunt, and
+    optionally mark the current one completed. Use the Hunt list to resume any
+    saved hunt later.
 
 ## Interface Frames
 
@@ -350,15 +357,19 @@ the Huh filter and make it from a live monitor preview. If a required template
 is missing or unreadable, the application surfaces that in the Templates tab
 and through runtime error handling.
 
-## Games and Sessions
+## Games, Hunts, and Sessions
 
-The lifetime encounter and catch counters never reset when a session changes.
-A session adds a second counter for a particular stretch of play:
+Progress is organized as `Game -> Hunt -> Session`. The all-time encounter and
+catch counters never reset. Each hunt has its own encounter and catch totals,
+and each session measures one stretch of play inside that hunt:
 
-- switching to another game starts a new session for that game
-- `New Session` on the Dashboard starts another session for the current game
+- `New Hunt...` saves the current hunt and starts a named hunt at zero
+- marking a hunt completed never deletes it; selecting it later resumes it
+- switching games restores that game's last selected hunt
+- switching hunts restores its saved counter and starts a new session
+- `New Session` starts another session inside the current hunt
 - stopping and restarting scanning continues the current session
-- every new event stores game and session identity alongside the existing data
+- every event stores game, hunt, session, hunt totals, and all-time totals
 
 Events created before session tracking are retained as session 1. During the
 one-time migration the original CSV and JSONL files are copied to
@@ -367,6 +378,11 @@ session 2 at the existing lifetime counter without resetting encounters or
 catches. The pre-migration `state.json` and `counter.txt` are retained in the
 same versioned backup folder. Older configuration versions are backed up under
 `output/migration_backups/config_<old>_to_v<new>/` before normalization.
+
+On the first launch with hunt tracking, existing state and events are assigned
+to `Original Hunt` at their current encounter number. Pre-migration state and
+logs are retained under `output/migration_backups/hunt_identity_v1/`. No
+encounter, catch, event, or old hunt is deleted by this migration.
 
 ## Configuration
 
@@ -381,6 +397,9 @@ It stores:
 - encounter increment
 - debug preferences
 - per-filter templates, capture regions, thresholds, and cooldowns
+
+Hunts are user progress rather than configuration, so they are stored in the
+local `output/state.json` file.
 
 Notes:
 

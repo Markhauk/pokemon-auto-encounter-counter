@@ -57,16 +57,25 @@ def run_smoke_test() -> int:
                 templates_dir=root / "templates",
             )
             state_manager.ensure_directories()
+            hunt = state_manager.ensure_hunt_for_game(
+                game_id="smoke_test",
+                game_name="Smoke Test",
+            )
             state_manager.write_session_context(
                 SessionContext(
                     game_id="smoke_test",
                     game_name="Smoke Test",
-                    session_id="smoke_test-session-0001",
+                    session_id=f"{hunt.hunt_id}-session-0001",
                     session_number=1,
                     session_started_at="smoke-test",
                     session_start_counter=0,
+                    hunt_id=hunt.hunt_id,
+                    hunt_name=hunt.hunt_name,
+                    hunt_started_at=hunt.hunt_started_at,
                 )
             )
+            if state_manager.get_active_hunt(game_id="smoke_test") is None:
+                raise RuntimeError("The active hunt could not be persisted.")
 
             event_logger = EventLogger(
                 csv_file=output_dir / "encounter_log.csv",
@@ -77,7 +86,9 @@ def run_smoke_test() -> int:
                     "timestamp": "smoke-test",
                     "event": "smoke_test",
                     "game_id": "smoke_test",
-                    "session_id": "smoke_test-session-0001",
+                    "hunt_id": hunt.hunt_id,
+                    "hunt_name": hunt.hunt_name,
+                    "session_id": f"{hunt.hunt_id}-session-0001",
                 }
             )
             if len(event_logger.read_recent_events(limit=1)) != 1:

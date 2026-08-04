@@ -36,15 +36,21 @@ class LogsTab(QWidget):
         self.current_catch_value = QLabel("0")
         self.current_event_value = QLabel("none")
         self.current_game_value = QLabel("N/A")
+        self.current_hunt_value = QLabel("N/A")
+        self.current_hunt_counter_value = QLabel("0")
+        self.current_hunt_catch_value = QLabel("0")
         self.current_session_value = QLabel("N/A")
         self.current_session_counter_value = QLabel("0")
         self.current_filter_value = QLabel("N/A")
         self.current_label_value = QLabel("N/A")
         self.output_dir_value = QLabel(self.controller.get_output_dir())
         self.output_dir_value.setWordWrap(True)
-        summary_layout.addRow("Current counter", self.current_counter_value)
-        summary_layout.addRow("Current catch counter", self.current_catch_value)
+        summary_layout.addRow("All-time encounters", self.current_counter_value)
+        summary_layout.addRow("All-time catches", self.current_catch_value)
         summary_layout.addRow("Game", self.current_game_value)
+        summary_layout.addRow("Hunt", self.current_hunt_value)
+        summary_layout.addRow("Hunt encounters", self.current_hunt_counter_value)
+        summary_layout.addRow("Hunt catches", self.current_hunt_catch_value)
         summary_layout.addRow("Session", self.current_session_value)
         summary_layout.addRow("Session encounters", self.current_session_counter_value)
         summary_layout.addRow("Last event", self.current_event_value)
@@ -90,8 +96,10 @@ class LogsTab(QWidget):
                 f"{event.get('timestamp', '')} | {event.get('filter_name', event.get('event', ''))} | "
                 f"type={event.get('filter_event_type', event.get('event', ''))} | "
                 f"game={event.get('game_name', event.get('game_id', ''))} | "
+                f"hunt={event.get('hunt_name', '')} | "
                 f"session=#{event.get('session_number', 0)} | "
-                f"encounters={event.get('counter', 0)} | catches={event.get('catch_counter', 0)} | "
+                f"hunt_encounters={event.get('hunt_encounter_count', 0)} | "
+                f"all_time={event.get('counter', 0)} | catches={event.get('catch_counter', 0)} | "
                 f"+{event.get('encounter_increment', 1)} | "
                 f"region=({event.get('capture_left', 0)}, {event.get('capture_top', 0)}, "
                 f"{event.get('capture_width', 0)}, {event.get('capture_height', 0)})"
@@ -105,6 +113,9 @@ class LogsTab(QWidget):
         self.current_game_value.setText(
             str(snapshot.get("game_name", snapshot.get("active_game_name", "N/A")) or "N/A")
         )
+        self.current_hunt_value.setText(str(snapshot.get("hunt_name", "N/A") or "N/A"))
+        self.current_hunt_counter_value.setText(str(snapshot.get("hunt_encounter_count", 0)))
+        self.current_hunt_catch_value.setText(str(snapshot.get("hunt_catch_counter", 0)))
         session_number = int(snapshot.get("session_number", 0))
         self.current_session_value.setText(f"#{session_number}" if session_number else "N/A")
         self.current_session_counter_value.setText(str(snapshot.get("session_encounter_count", 0)))

@@ -22,6 +22,13 @@ class SessionMigrationResult:
     backup_dir: str = ""
 
 
+@dataclass(frozen=True)
+class HuntMigrationResult:
+    event_count: int
+    migrated_count: int
+    backup_dir: str = ""
+
+
 class EventLogger:
     def __init__(
         self,
@@ -98,6 +105,75 @@ class EventLogger:
                 (int(payload.get("session_number", 0)) for payload in raw_events),
                 default=0,
             ),
+            backup_dir=backup_dir,
+        )
+
+    def migrate_legacy_hunt(
+        self,
+        *,
+        hunt_id: str,
+        hunt_name: str,
+        hunt_started_at: str,
+    ) -> HuntMigrationResult:
+        """Attach pre-hunt events to the preserved Original Hunt."""
+        self.jsonl_file.parent.mkdir(parents=True, exist_ok=True)
+        if not self.jsonl_file.exists():
+            atomic_write_text(self.jsonl_file, "")
+
+        raw_events = self._read_all_jsonl_events_strict(
+            error_prefix="Cannot migrate event log because"
+        )
+        migrated_count = 0
+        for payload in raw_events:
+            changed = False
+            legacy_counter = int(payload.get("counter", 0))
+            legacy_last_catch = int(payload.get("last_catch_at_encounter", 0))
+            legacy_values: dict[str, object] = {
+                "hunt_id": hunt_id,
+                "hunt_name": hunt_name,
+                "hunt_status": "active",
+                "hunt_started_at": hunt_started_at,
+                "hunt_completed_at": "",
+                "hunt_encounter_count": legacy_counter,
+                "hunt_catch_counter": int(payload.get("catch_counter", 0)),
+                "hunt_last_catch_at_encounter": legacy_last_catch,
+                "hunt_encounters_since_last_catch": (
+                    max(0, legacy_counter - legacy_last_catch)
+                    if legacy_last_catch > 0
+                    else legacy_counter
+                ),
+                "session_start_hunt_counter": int(payload.get("session_start_counter", 0)),
+            }
+            for key, value in legacy_values.items():
+                if key not in payload or payload.get(key) in (None, ""):
+                    payload[key] = value
+                    changed = True
+            if changed:
+                migrated_count += 1
+
+        backup_dir = ""
+        if migrated_count:
+            backup_path = self.jsonl_file.parent / "migration_backups" / "hunt_identity_v1"
+            backup_path.mkdir(parents=True, exist_ok=True)
+            jsonl_backup = backup_path / self.jsonl_file.name
+            csv_backup = backup_path / self.csv_file.name
+            if not jsonl_backup.exists():
+                atomic_write_bytes(jsonl_backup, self.jsonl_file.read_bytes())
+            if self.csv_file.exists() and not csv_backup.exists():
+                atomic_write_bytes(csv_backup, self.csv_file.read_bytes())
+            backup_dir = str(backup_path)
+            atomic_write_text(
+                self.jsonl_file,
+                "".join(json.dumps(payload, ensure_ascii=False) + "\n" for payload in raw_events),
+            )
+
+        if migrated_count or not self._csv_is_consistent(raw_events):
+            self._write_csv_rows(raw_events)
+
+        self._files_ensured = True
+        return HuntMigrationResult(
+            event_count=len(raw_events),
+            migrated_count=migrated_count,
             backup_dir=backup_dir,
         )
 
@@ -266,9 +342,19 @@ class EventLogger:
             "capture_height": int(capture_height),
             "game_id": str(payload.get("game_id", "")),
             "game_name": str(payload.get("game_name", "")),
+            "hunt_id": str(payload.get("hunt_id", "")),
+            "hunt_name": str(payload.get("hunt_name", "")),
+            "hunt_status": str(payload.get("hunt_status", "")),
+            "hunt_started_at": str(payload.get("hunt_started_at", "")),
+            "hunt_completed_at": str(payload.get("hunt_completed_at", "")),
+            "hunt_encounter_count": int(payload.get("hunt_encounter_count", 0)),
+            "hunt_catch_counter": int(payload.get("hunt_catch_counter", 0)),
+            "hunt_last_catch_at_encounter": int(payload.get("hunt_last_catch_at_encounter", 0)),
+            "hunt_encounters_since_last_catch": int(payload.get("hunt_encounters_since_last_catch", 0)),
             "session_id": str(payload.get("session_id", "")),
             "session_number": int(payload.get("session_number", 0)),
             "session_started_at": str(payload.get("session_started_at", "")),
             "session_start_counter": int(payload.get("session_start_counter", 0)),
+            "session_start_hunt_counter": int(payload.get("session_start_hunt_counter", 0)),
             "session_encounter_count": int(payload.get("session_encounter_count", 0)),
         }

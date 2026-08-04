@@ -32,6 +32,25 @@ class FilterRuntimeState:
 
 
 @dataclass(frozen=True)
+class HuntContext:
+    hunt_id: str
+    hunt_name: str
+    game_id: str
+    game_name: str
+    hunt_status: str
+    hunt_started_at: str
+    hunt_completed_at: str = ""
+    hunt_encounter_count: int = 0
+    hunt_catch_counter: int = 0
+    hunt_last_catch_at_encounter: int = 0
+    hunt_encounters_since_last_catch: int = 0
+    session_number: int = 0
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class SessionContext:
     game_id: str
     game_name: str
@@ -40,6 +59,16 @@ class SessionContext:
     session_started_at: str
     session_start_counter: int
     session_encounter_count: int = 0
+    hunt_id: str = ""
+    hunt_name: str = ""
+    hunt_status: str = "active"
+    hunt_started_at: str = ""
+    hunt_completed_at: str = ""
+    hunt_encounter_count: int = 0
+    hunt_catch_counter: int = 0
+    hunt_last_catch_at_encounter: int = 0
+    hunt_encounters_since_last_catch: int = 0
+    session_start_hunt_counter: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -76,6 +105,16 @@ class CounterSnapshot:
     frame_index: int
     filters_runtime: dict[str, dict[str, object]]
     error_message: str = ""
+    hunt_id: str = ""
+    hunt_name: str = ""
+    hunt_status: str = "active"
+    hunt_started_at: str = ""
+    hunt_completed_at: str = ""
+    hunt_encounter_count: int = 0
+    hunt_catch_counter: int = 0
+    hunt_last_catch_at_encounter: int = 0
+    hunt_encounters_since_last_catch: int = 0
+    session_start_hunt_counter: int = 0
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
