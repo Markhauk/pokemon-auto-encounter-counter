@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QImage
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QGroupBox
 
 from app.core.event_logger import EventLogger
@@ -103,8 +104,50 @@ class InterfaceFrameTests(unittest.TestCase):
             }
             self.assertEqual(
                 framed_titles,
-                {"Games", "Configured Filters", "Filter Details", "Preview"},
+                {"Filter Library", "Selected Filter"},
             )
+            self.assertTrue(tab.advanced_widget.isHidden())
+            self.assertEqual(tab.advanced_toggle.text(), "Show advanced settings")
+            tab.advanced_toggle.click()
+            self.assertFalse(tab.advanced_widget.isHidden())
+            self.assertEqual(tab.advanced_toggle.text(), "Hide advanced settings")
+            self.assertIn("Template", tab.filter_status_label.text())
+            self.assertNotIn("\n", tab.filter_list.item(0).text())
+            self.assertEqual(tab.workspace_tabs.count(), 2)
+            self.assertEqual(tab.workspace_tabs.tabText(0), "Preview")
+            self.assertEqual(tab.workspace_tabs.tabText(1), "Settings")
+
+    def test_filter_selection_queues_an_automatic_preview_when_tab_opens(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_dir = root / "output"
+            with patch("app.services.config_service._read_physical_monitors", return_value=[]):
+                controller = AppController(
+                    config_service=ConfigService(config_path=root / "config.json"),
+                    state_manager=StateManager(
+                        counter_file=output_dir / "counter.txt",
+                        state_file=output_dir / "state.json",
+                        output_dir=output_dir,
+                        templates_dir=root / "templates",
+                    ),
+                    event_logger=EventLogger(
+                        csv_file=output_dir / "encounter_log.csv",
+                        jsonl_file=output_dir / "event_log.jsonl",
+                    ),
+                )
+                tab = FiltersTab(controller)
+
+            self.assertTrue(tab._preview_pending_when_shown)
+            with patch.object(tab, "_capture_preview_for_filter") as capture_preview:
+                tab.show()
+                QTest.qWait(220)
+                self.application.processEvents()
+
+            capture_preview.assert_called_once_with(
+                tab._selected_filter_id,
+                show_error_dialog=False,
+            )
+            tab.close()
 
     def test_requested_sections_across_other_tabs_are_marked(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

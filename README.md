@@ -281,13 +281,18 @@ Used for:
 
 ### Filters
 
-Used for:
+Organized as two simple areas:
 
-- organizing filters by game
-- choosing event type, threshold, cooldown, and enabled state
-- creating a template from a full-monitor screenshot
-- moving and resizing the template crop before saving it
-- checking a live template-match score against the current preview
+- `Filter Library` combines game selection and that game's filter list.
+- `Selected Filter` contains a large automatic Preview and a separate Settings
+  tab, so configuration fields are hidden while checking the captured image.
+
+The selected filter header shows its game and whether it is enabled. Template
+health is shown as one compact line above the preview.
+
+Exact template filenames and capture coordinates are hidden by default under
+`Show advanced settings`. The automatic preview still shows the saved capture
+area and clearly reports a missing or unreadable template.
 
 ### Templates
 
@@ -312,11 +317,14 @@ Used for:
 
 1. Open the desktop application.
 2. Go to `Capture Settings` and choose the monitor containing the game.
-3. Open `Filters`, select the game and the filter you want to configure.
-4. Click `Make Template` and drag the yellow rectangle tightly around the
+3. Open `Filters`, select the game, then select the filter you want to configure.
+   The saved capture area is previewed automatically.
+4. If its template is missing or needs replacement, click `Make Template` or
+   `Replace Template` and drag the yellow rectangle tightly around the
    battle text. Drag inside it to move it or use its handles to resize it.
 5. Keep the default search padding or adjust it if the text can move slightly.
-6. Save the template, then run `Capture Preview` to see its live match score.
+6. Save the template. The selected filter refreshes with its live match score;
+   use `Refresh Preview` whenever you want another screenshot.
 7. Enable the filter when its preview is reliable.
 8. Go to `Dashboard`, set the encounter increment, and click `Start`.
 9. Click `Stop` when finished.
@@ -331,9 +339,8 @@ frame types. Each option uses a pixel-art nine-slice asset so its original
 corners and repeating edge details stay sharp without stretching across large
 desktop panels. The selected frame is applied to the main sections throughout
 the application: Scanner Controls, Counters, Live Details, Live Runtime Log,
-Games, Configured Filters, Filter Details, Preview, Display Setup, Last Preview,
-Template Preview, and Logs and State. Existing buttons are unchanged, and the
-choice is saved in `config.json` for the next launch.
+the two Filters workspace panels, Display Setup, Last Preview, Template Preview,
+and Logs and State. The choice is saved in `config.json` for the next launch.
 
 ## Templates
 
