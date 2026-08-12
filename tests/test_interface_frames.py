@@ -116,6 +116,25 @@ class InterfaceFrameTests(unittest.TestCase):
             self.assertEqual(tab.workspace_tabs.count(), 2)
             self.assertEqual(tab.workspace_tabs.tabText(0), "Preview")
             self.assertEqual(tab.workspace_tabs.tabText(1), "Settings")
+            self.assertTrue(tab.preview_tab.isAncestorOf(tab.enabled_checkbox))
+            self.assertFalse(tab.settings_tab.isAncestorOf(tab.enabled_checkbox))
+
+            selected_filter_id = tab._selected_filter_id
+            was_enabled = bool(controller.get_filter(selected_filter_id).enabled)
+            self.assertEqual(
+                tab.enabled_state_label.text(),
+                "Enabled" if was_enabled else "Disabled",
+            )
+            tab.enabled_checkbox.click()
+            self.assertEqual(
+                controller.get_filter(selected_filter_id).enabled,
+                not was_enabled,
+            )
+            self.assertEqual(
+                tab.enabled_state_label.text(),
+                "Disabled" if was_enabled else "Enabled",
+            )
+            self.assertEqual(tab.workspace_tabs.currentWidget(), tab.preview_tab)
 
     def test_filter_selection_queues_an_automatic_preview_when_tab_opens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -287,8 +287,10 @@ Organized as two simple areas:
 - `Selected Filter` contains a large automatic Preview and a separate Settings
   tab, so configuration fields are hidden while checking the captured image.
 
-The selected filter header shows its game and whether it is enabled. Template
-health is shown as one compact line above the preview.
+The Preview tab includes an `Enabled for scanning` checkbox that saves
+immediately, so turning a filter on or off does not require opening Settings or
+pressing Save. The selected-filter header also keeps a green `Enabled` status
+badge for quick confirmation. Template health is shown as one compact line.
 
 Exact template filenames and capture coordinates are hidden by default under
 `Show advanced settings`. The automatic preview still shows the saved capture
@@ -325,7 +327,7 @@ Used for:
 5. Keep the default search padding or adjust it if the text can move slightly.
 6. Save the template. The selected filter refreshes with its live match score;
    use `Refresh Preview` whenever you want another screenshot.
-7. Enable the filter when its preview is reliable.
+7. Enable the filter directly on the Preview tab when its preview is reliable.
 8. Go to `Dashboard`, set the encounter increment, and click `Start`.
 9. Click `Stop` when finished.
 10. After finishing a shiny hunt, click `New Hunt...`, name the next hunt, and

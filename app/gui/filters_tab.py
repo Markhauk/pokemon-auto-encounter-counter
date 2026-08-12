@@ -48,6 +48,7 @@ class FiltersTab(QWidget):
         self._preview_request_number = 0
         self._preview_pending_when_shown = False
         self._displayed_filter_id = ""
+        self._updating_enabled = False
         self._build_ui()
         self._connect_signals()
         self.refresh()
@@ -115,9 +116,9 @@ class FiltersTab(QWidget):
         self.game_name_value.setStyleSheet("color: #b8b8b8;")
         editor_heading_text.addWidget(self.selected_filter_heading)
         editor_heading_text.addWidget(self.game_name_value)
+        editor_heading_row.addLayout(editor_heading_text, 1)
         self.enabled_state_label = QLabel("")
         self.enabled_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        editor_heading_row.addLayout(editor_heading_text, 1)
         editor_heading_row.addWidget(self.enabled_state_label)
         workspace_layout.addLayout(editor_heading_row)
 
@@ -127,13 +128,20 @@ class FiltersTab(QWidget):
         self.preview_tab = QWidget()
         preview_layout = QVBoxLayout(self.preview_tab)
 
+        preview_status_row = QHBoxLayout()
         self.filter_status_label = QLabel("Select a filter to check its template.")
         self.filter_status_label.setWordWrap(True)
         self.filter_status_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Maximum,
         )
-        preview_layout.addWidget(self.filter_status_label)
+        self.enabled_checkbox = QCheckBox("Enabled for scanning")
+        self.enabled_checkbox.setToolTip(
+            "Turn this filter on or off immediately. No separate Save step is needed."
+        )
+        preview_status_row.addWidget(self.filter_status_label, 1)
+        preview_status_row.addWidget(self.enabled_checkbox)
+        preview_layout.addLayout(preview_status_row)
 
         self.preview_label = QLabel("Select a filter to capture its screen area.")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -161,7 +169,6 @@ class FiltersTab(QWidget):
         settings_layout = QVBoxLayout(self.settings_tab)
 
         form = QFormLayout()
-        self.enabled_checkbox = QCheckBox("Use this filter while scanning")
         self.name_edit = QLineEdit()
         self.event_type_combo = QComboBox()
         event_type_labels = {
@@ -189,7 +196,6 @@ class FiltersTab(QWidget):
             "How long this filter waits after a match before it can count again."
         )
 
-        form.addRow("Scanning", self.enabled_checkbox)
         form.addRow("Name", self.name_edit)
         form.addRow("When matched", self.event_type_combo)
         form.addRow("Threshold", self.threshold_spin)
@@ -252,6 +258,7 @@ class FiltersTab(QWidget):
         self.save_filter_button.clicked.connect(self._save_filter)
         self.preview_button.clicked.connect(self._capture_preview)
         self.make_template_button.clicked.connect(self._make_template)
+        self.enabled_checkbox.toggled.connect(self._handle_enabled_toggled)
         self.advanced_toggle.toggled.connect(self._toggle_advanced_settings)
 
         self.controller.config_changed.connect(self._handle_config_changed)
@@ -381,6 +388,7 @@ class FiltersTab(QWidget):
                 self.workspace_group.setEnabled(False)
                 self.selected_filter_heading.setText("Select a filter to continue")
                 self.enabled_state_label.clear()
+                self.enabled_state_label.setStyleSheet("")
                 self.enabled_checkbox.setChecked(False)
                 self.name_edit.clear()
                 self.template_path_edit.clear()
@@ -399,15 +407,7 @@ class FiltersTab(QWidget):
 
             self.workspace_group.setEnabled(True)
             self.selected_filter_heading.setText(filter_definition.name)
-            self.enabled_state_label.setText("Enabled" if filter_definition.enabled else "Disabled")
-            self.enabled_state_label.setStyleSheet(
-                "padding: 4px 8px; border-radius: 3px; "
-                + (
-                    "color: #d8f3dc; background-color: #23382a;"
-                    if filter_definition.enabled
-                    else "color: #c8c8c8; background-color: #3a3a3a;"
-                )
-            )
+            self._update_enabled_badge(filter_definition.enabled)
             self.enabled_checkbox.setChecked(filter_definition.enabled)
             self.name_edit.setText(filter_definition.name)
             self.template_path_edit.setText(filter_definition.template_path)
@@ -457,6 +457,66 @@ class FiltersTab(QWidget):
         self._selected_filter_id = updated_filter.id
         self.controller.save_filter(updated_filter)
         return self.controller.get_filter(updated_filter.id)
+
+    def _handle_enabled_toggled(self, enabled: bool) -> None:
+        if self._loading or self._updating_enabled:
+            return
+        filter_definition = self._current_filter()
+        if filter_definition is None or filter_definition.enabled == enabled:
+            return
+
+        updated_filter = FilterDefinition(
+            id=filter_definition.id,
+            name=filter_definition.name,
+            enabled=enabled,
+            event_type=filter_definition.event_type,
+            template_path=filter_definition.template_path,
+            capture_region=dict(filter_definition.capture_region),
+            threshold=filter_definition.threshold,
+            cooldown_seconds=filter_definition.cooldown_seconds,
+            built_in=filter_definition.built_in,
+            description=filter_definition.description,
+            metadata=dict(filter_definition.metadata),
+        )
+        self._updating_enabled = True
+        try:
+            self.controller.save_filter(updated_filter)
+        except Exception as exc:
+            self._loading = True
+            try:
+                self.enabled_checkbox.setChecked(filter_definition.enabled)
+            finally:
+                self._loading = False
+            self._show_error(str(exc))
+            return
+        finally:
+            self._updating_enabled = False
+
+        saved_filter = self.controller.get_filter(filter_definition.id)
+        if saved_filter is not None:
+            self._filters = [
+                saved_filter if existing.id == saved_filter.id else existing
+                for existing in self._filters
+            ]
+            self._update_enabled_badge(saved_filter.enabled)
+            current_item = self.filter_list.currentItem()
+            if current_item is not None:
+                current_item.setToolTip(
+                    f"{saved_filter.name}\n"
+                    f"Counts as: {saved_filter.event_type}\n"
+                    f"{'Enabled' if saved_filter.enabled else 'Disabled'}"
+                )
+
+    def _update_enabled_badge(self, enabled: bool) -> None:
+        self.enabled_state_label.setText("Enabled" if enabled else "Disabled")
+        self.enabled_state_label.setStyleSheet(
+            "padding: 5px 10px; border-radius: 3px; font-weight: 600; "
+            + (
+                "color: #d8f3dc; background-color: #23382a; border: 1px solid #5fbf70;"
+                if enabled
+                else "color: #c8c8c8; background-color: #3a3a3a; border: 1px solid #666;"
+            )
+        )
 
     def _add_game(self) -> None:
         name, accepted = QInputDialog.getText(self, "Add Game", "Game name:")
@@ -746,6 +806,8 @@ class FiltersTab(QWidget):
         )
 
     def _handle_config_changed(self, _config: dict[str, object]) -> None:
+        if self._updating_enabled:
+            return
         self.refresh()
 
     def _show_error(self, message: str) -> None:
