@@ -117,6 +117,9 @@ class FiltersTab(QWidget):
         editor_heading_text.addWidget(self.selected_filter_heading)
         editor_heading_text.addWidget(self.game_name_value)
         editor_heading_row.addLayout(editor_heading_text, 1)
+        self.match_action_label = QLabel("")
+        self.match_action_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        editor_heading_row.addWidget(self.match_action_label)
         self.enabled_state_label = QLabel("")
         self.enabled_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         editor_heading_row.addWidget(self.enabled_state_label)
@@ -387,6 +390,8 @@ class FiltersTab(QWidget):
             if filter_definition is None:
                 self.workspace_group.setEnabled(False)
                 self.selected_filter_heading.setText("Select a filter to continue")
+                self.match_action_label.clear()
+                self.match_action_label.setStyleSheet("")
                 self.enabled_state_label.clear()
                 self.enabled_state_label.setStyleSheet("")
                 self.enabled_checkbox.setChecked(False)
@@ -407,6 +412,7 @@ class FiltersTab(QWidget):
 
             self.workspace_group.setEnabled(True)
             self.selected_filter_heading.setText(filter_definition.name)
+            self._update_match_action_badge(filter_definition.event_type)
             self._update_enabled_badge(filter_definition.enabled)
             self.enabled_checkbox.setChecked(filter_definition.enabled)
             self.name_edit.setText(filter_definition.name)
@@ -516,6 +522,21 @@ class FiltersTab(QWidget):
                 if enabled
                 else "color: #c8c8c8; background-color: #3a3a3a; border: 1px solid #666;"
             )
+        )
+
+    def _update_match_action_badge(self, event_type: str) -> None:
+        action_labels = {
+            "encounter_start": "Encounter starts",
+            "catch": "Pokemon caught",
+            "fled": "Pokemon fled",
+            "info": "Information only",
+            "label": "Set active label",
+        }
+        action = action_labels.get(event_type, event_type.replace("_", " ").title())
+        self.match_action_label.setText(f"When matched: {action}")
+        self.match_action_label.setStyleSheet(
+            "padding: 5px 10px; border-radius: 3px; font-weight: 600; "
+            "color: #d8f3dc; background-color: #23382a; border: 1px solid #5fbf70;"
         )
 
     def _add_game(self) -> None:

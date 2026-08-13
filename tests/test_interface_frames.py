@@ -125,6 +125,11 @@ class InterfaceFrameTests(unittest.TestCase):
                 tab.enabled_state_label.text(),
                 "Enabled" if was_enabled else "Disabled",
             )
+            self.assertEqual(
+                tab.match_action_label.text(),
+                "When matched: Encounter starts",
+            )
+            self.assertIn("#5fbf70", tab.match_action_label.styleSheet())
             tab.enabled_checkbox.click()
             self.assertEqual(
                 controller.get_filter(selected_filter_id).enabled,
@@ -135,6 +140,14 @@ class InterfaceFrameTests(unittest.TestCase):
                 "Disabled" if was_enabled else "Enabled",
             )
             self.assertEqual(tab.workspace_tabs.currentWidget(), tab.preview_tab)
+
+            catch_index = tab.event_type_combo.findData("catch")
+            tab.event_type_combo.setCurrentIndex(catch_index)
+            tab.save_filter_button.click()
+            self.assertEqual(
+                tab.match_action_label.text(),
+                "When matched: Pokemon caught",
+            )
 
     def test_filter_selection_queues_an_automatic_preview_when_tab_opens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

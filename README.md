@@ -290,7 +290,9 @@ Organized as two simple areas:
 The Preview tab includes an `Enabled for scanning` checkbox that saves
 immediately, so turning a filter on or off does not require opening Settings or
 pressing Save. The selected-filter header also keeps a green `Enabled` status
-badge for quick confirmation. Template health is shown as one compact line.
+badge for quick confirmation. A second green `When matched` badge shows the
+saved counting action without opening Settings. Template health is shown as one
+compact line.
 
 Exact template filenames and capture coordinates are hidden by default under
 `Show advanced settings`. The automatic preview still shows the saved capture
