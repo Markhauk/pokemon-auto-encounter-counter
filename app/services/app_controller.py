@@ -16,7 +16,7 @@ from app.core.display import (
 )
 from app.core.event_logger import EventLogger
 from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition, GameDefinition
-from app.core.paths import DEBUG_FRAME_FILE, OUTPUT_DIR, TEMPLATE_SOURCE_FILE
+from app.core.paths import DEBUG_FRAME_FILE, MONITOR_PREVIEW_FILE, OUTPUT_DIR, TEMPLATE_SOURCE_FILE
 from app.core.regions import clamp_region, expand_region
 from app.core.state_manager import StateManager
 from app.core.templates import TemplateManager
@@ -292,6 +292,27 @@ class AppController(QObject):
         }
         self.preview_captured.emit(payload)
         return payload
+
+    def capture_monitor_preview(
+        self,
+        *,
+        display_setup: Optional[dict[str, object]] = None,
+    ) -> dict[str, object]:
+        """Capture the entire selected physical monitor for the Capture tab."""
+        monitor = self.get_selected_capture_monitor(display_setup=display_setup)
+        region = {
+            "left": int(monitor["left"]),
+            "top": int(monitor["top"]),
+            "width": int(monitor["width"]),
+            "height": int(monitor["height"]),
+        }
+        frame_bgr = grab_region(region)
+        save_image(MONITOR_PREVIEW_FILE, frame_bgr)
+        return {
+            "path": str(MONITOR_PREVIEW_FILE),
+            "monitor": dict(monitor),
+            "monitor_index": int(monitor["index"]),
+        }
 
     def capture_template_source(self, filter_id: str) -> dict[str, object]:
         if self.is_running():

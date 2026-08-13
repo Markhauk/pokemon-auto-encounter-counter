@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(DashboardTab(controller), "Dashboard")
         self.tabs.addTab(FiltersTab(controller), "Filters")
-        self.tabs.addTab(CaptureSettingsTab(controller), "Capture Settings")
+        self.tabs.addTab(CaptureSettingsTab(controller), "Capture")
         self.tabs.addTab(TemplatesTab(controller), "Templates")
         self.tabs.addTab(LogsTab(controller), "Logs / State")
         self.tabs.addTab(SettingsTab(controller), "Settings")

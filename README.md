@@ -82,6 +82,7 @@ The application continues to use these files:
 - `output/encounter_log.csv`
 - `output/event_log.jsonl`
 - `output/last_capture.png`
+- `output/monitor_preview.png`
 - `output/template_source.png`
 - `output/encounter_counter.lock`
 
@@ -271,13 +272,17 @@ Main operating view for:
 - status display
 - live runtime log
 
-### Capture Settings
+### Capture
 
 Used for:
 
-- choosing the monitor used for capture
-- reviewing the latest filter preview
-- saving display settings to `config.json`
+- seeing how many monitors Windows detected
+- choosing the active capture monitor; the choice saves immediately
+- viewing a full-screen preview of the active monitor
+
+The tab intentionally omits monitor coordinates and per-filter capture-region
+details. Those technical settings remain with each filter under its advanced
+settings.
 
 ### Filters
 
@@ -320,7 +325,8 @@ Used for:
 ## Typical User Flow
 
 1. Open the desktop application.
-2. Go to `Capture Settings` and choose the monitor containing the game.
+2. Go to `Capture`, choose the monitor containing the game, and confirm it in
+   the full-screen preview.
 3. Open `Filters`, select the game, then select the filter you want to configure.
    The saved capture area is previewed automatically.
 4. If its template is missing or needs replacement, click `Make Template` or
@@ -343,7 +349,7 @@ frame types. Each option uses a pixel-art nine-slice asset so its original
 corners and repeating edge details stay sharp without stretching across large
 desktop panels. The selected frame is applied to the main sections throughout
 the application: Scanner Controls, Counters, Live Details, Live Runtime Log,
-the two Filters workspace panels, Display Setup, Last Preview, Template Preview,
+the two Filters workspace panels, Capture Monitor, Full Monitor Preview, Template Preview,
 and Logs and State. The choice is saved in `config.json` for the next launch.
 
 ## Templates

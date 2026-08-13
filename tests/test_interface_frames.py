@@ -22,6 +22,7 @@ from app.gui.dashboard_tab import DashboardTab
 from app.gui.filters_tab import FiltersTab
 from app.gui.frame_styles import build_interface_frame_stylesheet, get_frame_asset_path
 from app.gui.logs_tab import LogsTab
+from app.gui.main_window import MainWindow
 from app.gui.settings_tab import SettingsTab
 from app.gui.templates_tab import TemplatesTab
 from app.services.app_controller import AppController
@@ -207,7 +208,7 @@ class InterfaceFrameTests(unittest.TestCase):
                         DashboardTab(controller),
                         {"Scanner Controls", "Counters", "Live Details", "Live Runtime Log"},
                     ),
-                    (CaptureSettingsTab(controller), {"Display Setup", "Last Preview"}),
+                    (CaptureSettingsTab(controller), {"Capture Monitor", "Full Monitor Preview"}),
                     (TemplatesTab(controller), {"Template Preview"}),
                     (LogsTab(controller), {"Logs and State"}),
                 )
@@ -225,6 +226,59 @@ class InterfaceFrameTests(unittest.TestCase):
             self.assertEqual(dashboard.new_hunt_button.text(), "New Hunt...")
             self.assertGreaterEqual(dashboard.hunt_combo.count(), 1)
             self.assertEqual(dashboard.hunt_encounter_value.text(), "0")
+
+            window = MainWindow(controller)
+            self.assertEqual(window.tabs.tabText(2), "Capture")
+            window.close()
+
+    def test_capture_tab_shows_monitor_count_and_saves_active_monitor_immediately(self) -> None:
+        monitors = [
+            {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080},
+            {"index": 2, "left": 1920, "top": 0, "width": 2560, "height": 1440},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_dir = root / "output"
+            with (
+                patch("app.services.config_service._read_physical_monitors", return_value=monitors),
+                patch("app.services.app_controller.get_physical_monitors", return_value=monitors),
+            ):
+                controller = AppController(
+                    config_service=ConfigService(config_path=root / "config.json"),
+                    state_manager=StateManager(
+                        counter_file=output_dir / "counter.txt",
+                        state_file=output_dir / "state.json",
+                        output_dir=output_dir,
+                        templates_dir=root / "templates",
+                    ),
+                    event_logger=EventLogger(
+                        csv_file=output_dir / "encounter_log.csv",
+                        jsonl_file=output_dir / "event_log.jsonl",
+                    ),
+                )
+                with patch.object(
+                    controller,
+                    "capture_monitor_preview",
+                    return_value={
+                        "path": str(root / "monitor_preview.png"),
+                        "monitor_index": 2,
+                    },
+                ) as capture_preview:
+                    tab = CaptureSettingsTab(controller)
+                    self.assertEqual(tab.monitor_count_label.text(), "2 monitors connected")
+                    self.assertEqual(tab.monitor_combo.count(), 2)
+                    self.assertEqual(tab.monitor_combo.itemText(0), "Monitor 1")
+                    self.assertEqual(tab.monitor_combo.itemText(1), "Monitor 2")
+
+                    tab.monitor_combo.setCurrentIndex(1)
+
+                self.assertEqual(
+                    controller.get_display_setup()["capture_monitor_index"],
+                    2,
+                )
+                capture_preview.assert_called_once_with(
+                    display_setup={"capture_monitor_index": 2}
+                )
 
     def test_styles_only_target_frame_group_boxes(self) -> None:
         type_1 = build_interface_frame_stylesheet(FRAME_TYPE_1)
