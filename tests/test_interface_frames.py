@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QGroupBox
@@ -23,7 +23,7 @@ from app.gui.filters_tab import FiltersTab
 from app.gui.frame_styles import build_interface_frame_stylesheet, get_frame_asset_path
 from app.gui.logs_tab import LogsTab
 from app.gui.main_window import MainWindow
-from app.gui.settings_tab import SettingsTab
+from app.gui.settings_tab import InterfaceFramesDialog, SettingsTab
 from app.gui.templates_tab import TemplatesTab
 from app.services.app_controller import AppController
 from app.services.config_service import CONFIG_VERSION, ConfigService
@@ -65,15 +65,40 @@ class InterfaceFrameTests(unittest.TestCase):
                 reloaded = ConfigService(config_path=config_path)
                 self.assertEqual(reloaded.get_interface_frame_type(), 20)
 
-    def test_settings_selection_applies_immediately(self) -> None:
+    def test_interface_frame_dialog_selection_applies_immediately(self) -> None:
+        controller = SettingsControllerStub()
+        dialog = InterfaceFramesDialog(controller)  # type: ignore[arg-type]
+
+        dialog._radio_buttons[20].click()
+
+        self.assertEqual(controller.frame_type, 20)
+        self.assertIn("Frame Type 20", dialog.status_label.text())
+        self.assertEqual(set(dialog._radio_buttons), set(range(1, 21)))
+
+    def test_settings_shows_current_frame_and_opens_full_picker(self) -> None:
         controller = SettingsControllerStub()
         tab = SettingsTab(controller)  # type: ignore[arg-type]
 
-        tab._radio_buttons[20].click()
+        self.assertIn("Frame Type 1", tab.status_label.text())
+        self.assertTrue(tab.frame_style_group.property("pokemonFrame"))
+        self.assertEqual(tab.interface_frames_button.text(), "Interface Frames...")
+        self.assertFalse(hasattr(tab, "_radio_buttons"))
 
-        self.assertEqual(controller.frame_type, 20)
-        self.assertIn("Frame Type 20", tab.status_label.text())
-        self.assertEqual(set(tab._radio_buttons), set(range(1, 21)))
+        controller.set_interface_frame_type(12)
+        self.assertIn("Frame Type 12", tab.status_label.text())
+
+        opened_dialogs: list[InterfaceFramesDialog] = []
+
+        def close_open_picker() -> None:
+            dialog = QApplication.activeModalWidget()
+            if isinstance(dialog, InterfaceFramesDialog):
+                opened_dialogs.append(dialog)
+                dialog.reject()
+
+        QTimer.singleShot(0, close_open_picker)
+        tab.interface_frames_button.click()
+        self.assertEqual(len(opened_dialogs), 1)
+        self.assertIs(tab._frame_dialog, opened_dialogs[0])
 
     def test_filter_sections_are_marked_for_interface_frames(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

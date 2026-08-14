@@ -344,8 +344,9 @@ Used for:
 
 ## Interface Frames
 
-The Settings tab includes a live Generation 3-style frame selector with all 20
-frame types. Each option uses a pixel-art nine-slice asset so its original
+The Settings tab shows the currently selected Generation 3-style frame in a
+compact overview. Select `Interface Frames...` to open the full picker with all
+20 frame types. Each option uses a pixel-art nine-slice asset so its original
 corners and repeating edge details stay sharp without stretching across large
 desktop panels. The selected frame is applied to the main sections throughout
 the application: Scanner Controls, Counters, Live Details, Live Runtime Log,
