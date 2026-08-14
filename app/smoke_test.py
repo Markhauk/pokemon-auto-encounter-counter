@@ -74,6 +74,8 @@ def run_smoke_test() -> int:
                     hunt_started_at=hunt.hunt_started_at,
                 )
             )
+            if state_manager.obs_counter_file.read_text(encoding="utf-8") != "0":
+                raise RuntimeError("The OBS counter file could not be initialized.")
             if state_manager.get_active_hunt(game_id="smoke_test") is None:
                 raise RuntimeError("The active hunt could not be persisted.")
 
@@ -105,6 +107,7 @@ def run_smoke_test() -> int:
                 "config_version": config.get("version"),
                 "templates_checked": list(required_templates),
                 "interface_frames_checked": len(INTERFACE_FRAME_DEFINITIONS),
+                "obs_counter_checked": True,
             }
 
         probe_widget.close()

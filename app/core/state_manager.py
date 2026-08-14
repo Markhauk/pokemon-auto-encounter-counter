@@ -9,7 +9,7 @@ from typing import Optional
 from .exceptions import SingleInstanceError
 from .file_io import atomic_write_bytes, atomic_write_text
 from .models import CounterSnapshot, HuntContext, SessionContext
-from .paths import COUNTER_FILE, OUTPUT_DIR, STATE_FILE, TEMPLATES_DIR
+from .paths import COUNTER_FILE, OBS_COUNTER_FILE, OUTPUT_DIR, STATE_FILE, TEMPLATES_DIR
 
 
 def _safe_int(value: object, default: int) -> int:
@@ -107,11 +107,13 @@ class StateManager:
         self,
         *,
         counter_file: Path = COUNTER_FILE,
+        obs_counter_file: Path | None = None,
         state_file: Path = STATE_FILE,
         output_dir: Path = OUTPUT_DIR,
         templates_dir: Path = TEMPLATES_DIR,
     ) -> None:
         self.counter_file = counter_file
+        self.obs_counter_file = obs_counter_file or output_dir / OBS_COUNTER_FILE.name
         self.state_file = state_file
         self.output_dir = output_dir
         self.templates_dir = templates_dir
@@ -300,6 +302,7 @@ class StateManager:
         # state.json is canonical; counter.txt is a compatibility mirror.
         atomic_write_text(self.state_file, state_text)
         atomic_write_text(self.counter_file, str(snapshot.counter))
+        self.write_obs_counter(snapshot.hunt_encounter_count)
 
     def write_session_context(self, context: SessionContext) -> dict[str, object]:
         """Update session metadata without changing any persisted counters."""
@@ -316,7 +319,14 @@ class StateManager:
         if "counter" not in state:
             state["counter"] = self.read_counter()
         atomic_write_text(self.state_file, json.dumps(state, indent=2))
+        self.write_obs_counter(context.hunt_encounter_count)
         return state
+
+    def write_obs_counter(self, encounter_count: object) -> Path:
+        """Write the active hunt total in the plain-text format OBS expects."""
+        normalized = max(0, _safe_int(encounter_count, 0))
+        atomic_write_text(self.obs_counter_file, str(normalized))
+        return self.obs_counter_file
 
     def list_hunts(self, *, game_id: str | None = None) -> list[HuntContext]:
         hunts = [self._hunt_context(record) for record in self._hunt_records(self.read_state_dict())]

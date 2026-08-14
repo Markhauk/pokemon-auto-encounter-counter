@@ -342,6 +342,22 @@ Used for:
     optionally mark the current one completed. Use the Hunt list to resume any
     saved hunt later.
 
+## OBS Live Counter
+
+The Dashboard includes an `OBS Live Counter...` setup button. It creates and
+shows the path to `output/obs_counter.txt`, with a `Copy Path` button for quick
+setup in OBS:
+
+1. In OBS, add a `Text (GDI+)` source.
+2. Enable `Read from file`.
+3. Browse to `obs_counter.txt`, or paste the path copied from the application.
+4. Choose the font, size, outline, and other styling in OBS.
+
+The file contains only the active hunt's encounter number. It updates after a
+counted encounter, changes to `0` for a new hunt, and restores the saved number
+when an earlier hunt is selected. The existing `counter.txt` compatibility file
+continues to store the all-time encounter total.
+
 ## Interface Frames
 
 The Settings tab shows the currently selected Generation 3-style frame in a

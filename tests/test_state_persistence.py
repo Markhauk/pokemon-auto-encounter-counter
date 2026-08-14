@@ -57,6 +57,24 @@ class StatePersistenceTests(unittest.TestCase):
             self.assertEqual(manager.read_counter(), 42)
             self.assertEqual(manager.read_state_dict()["counter"], 42)
 
+    def test_obs_counter_mirrors_the_active_hunt_total(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = StateManager(
+                counter_file=root / "output" / "counter.txt",
+                state_file=root / "output" / "state.json",
+                output_dir=root / "output",
+                templates_dir=root / "templates",
+            )
+            snapshot = _snapshot(9578)
+            snapshot.hunt_encounter_count = 327
+
+            manager.save(snapshot)
+
+            self.assertEqual(manager.obs_counter_file.name, "obs_counter.txt")
+            self.assertEqual(manager.obs_counter_file.read_text(encoding="utf-8"), "327")
+            self.assertEqual(manager.counter_file.read_text(encoding="utf-8"), "9578")
+
 
 if __name__ == "__main__":
     unittest.main()

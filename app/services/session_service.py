@@ -62,6 +62,7 @@ class SessionService:
         elif current.game_id != game_id or current.hunt_id != hunt.hunt_id:
             current = self.start_new_session(game_id=game_id, game_name=game_name)
 
+        self.state_manager.write_obs_counter(current.hunt_encounter_count)
         return current, migration
 
     def current_context(self) -> SessionContext | None:

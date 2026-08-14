@@ -163,6 +163,18 @@ class AppController(QObject):
     def get_output_dir(self) -> str:
         return str(OUTPUT_DIR)
 
+    def prepare_obs_counter_file(self) -> dict[str, object]:
+        """Ensure OBS can immediately read the active hunt's current total."""
+        current = self.session_service.current_context()
+        if current is None:
+            current, _ = self.session_service.initialize()
+        path = self.state_manager.write_obs_counter(current.hunt_encounter_count)
+        return {
+            "path": str(path.resolve()),
+            "hunt_name": current.hunt_name,
+            "encounter_count": current.hunt_encounter_count,
+        }
+
     def get_debug_frame_path(self) -> str:
         return str(DEBUG_FRAME_FILE)
 

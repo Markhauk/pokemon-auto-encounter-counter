@@ -17,6 +17,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 CONFIG_FILE = BASE_DIR / "config.json"
 
 COUNTER_FILE = OUTPUT_DIR / "counter.txt"
+OBS_COUNTER_FILE = OUTPUT_DIR / "obs_counter.txt"
 STATE_FILE = OUTPUT_DIR / "state.json"
 LOCK_FILE = OUTPUT_DIR / "encounter_counter.lock"
 DEBUG_FRAME_FILE = OUTPUT_DIR / "last_capture.png"

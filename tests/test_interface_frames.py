@@ -249,6 +249,7 @@ class InterfaceFrameTests(unittest.TestCase):
             dashboard = expectations[0][0]
             self.assertIsInstance(dashboard, DashboardTab)
             self.assertEqual(dashboard.new_hunt_button.text(), "New Hunt...")
+            self.assertEqual(dashboard.obs_counter_button.text(), "OBS Live Counter...")
             self.assertGreaterEqual(dashboard.hunt_combo.count(), 1)
             self.assertEqual(dashboard.hunt_encounter_value.text(), "0")
 

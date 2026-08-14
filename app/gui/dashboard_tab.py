@@ -24,6 +24,7 @@ from app.services.app_controller import AppController
 
 from .frame_styles import mark_as_interface_frame
 from .new_hunt_dialog import NewHuntDialog
+from .obs_counter_dialog import ObsCounterDialog
 
 
 class DashboardTab(QWidget):
@@ -52,6 +53,8 @@ class DashboardTab(QWidget):
         self.stop_button = QPushButton("Stop")
         self.new_session_button = QPushButton("New Session")
         self.new_hunt_button = QPushButton("New Hunt...")
+        self.obs_counter_button = QPushButton("OBS Live Counter...")
+        self._obs_counter_dialog: ObsCounterDialog | None = None
         self.status_value = QLabel("Idle")
         self.session_value = QLabel("N/A")
         self.setup_summary_label = QLabel("")
@@ -74,6 +77,7 @@ class DashboardTab(QWidget):
         controls_layout.addWidget(self.status_value, 2, 1)
         controls_layout.addWidget(self.new_session_button, 2, 4, 1, 2)
         controls_layout.addWidget(self.new_hunt_button, 3, 4, 1, 2)
+        controls_layout.addWidget(self.obs_counter_button, 4, 4, 1, 2)
         controls_layout.addWidget(self.setup_summary_label, 3, 0, 2, 4)
 
         summary_row = QHBoxLayout()
@@ -140,6 +144,7 @@ class DashboardTab(QWidget):
         self.stop_button.clicked.connect(self.controller.stop_scan)
         self.new_session_button.clicked.connect(self._start_new_session)
         self.new_hunt_button.clicked.connect(self._start_new_hunt)
+        self.obs_counter_button.clicked.connect(self._open_obs_counter_setup)
         self.game_combo.currentIndexChanged.connect(self._handle_game_changed)
         self.hunt_combo.currentIndexChanged.connect(self._handle_hunt_changed)
 
@@ -347,6 +352,16 @@ class DashboardTab(QWidget):
             )
         except Exception as exc:
             self._show_error(str(exc))
+
+    def _open_obs_counter_setup(self) -> None:
+        try:
+            if self._obs_counter_dialog is None:
+                self._obs_counter_dialog = ObsCounterDialog(self.controller, self)
+            else:
+                self._obs_counter_dialog.refresh()
+            self._obs_counter_dialog.exec()
+        except Exception as exc:
+            self._show_error(f"Could not prepare the OBS counter file: {exc}")
 
     def _handle_game_changed(self, _index: int) -> None:
         if self._loading or self.controller.is_running():

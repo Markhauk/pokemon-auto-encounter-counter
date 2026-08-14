@@ -69,6 +69,10 @@ class SessionServiceTests(unittest.TestCase):
             self.assertEqual(context.session_encounter_count, 0)
             self.assertEqual(context.hunt_name, "Original Hunt")
             self.assertEqual(context.hunt_encounter_count, 9578)
+            self.assertEqual(
+                state_manager.obs_counter_file.read_text(encoding="utf-8"),
+                "9578",
+            )
             self.assertEqual(state_manager.read_counter(), 9578)
             state = state_manager.read_state_dict()
             self.assertEqual(state["counter"], 9578)
@@ -118,6 +122,10 @@ class SessionServiceTests(unittest.TestCase):
 
             self.assertEqual(new_context.hunt_name, "Shiny Rayquaza")
             self.assertEqual(new_context.hunt_encounter_count, 0)
+            self.assertEqual(
+                state_manager.obs_counter_file.read_text(encoding="utf-8"),
+                "0",
+            )
             self.assertEqual(new_context.session_number, 1)
             self.assertEqual(state_manager.read_counter(), 250)
             hunts = state_manager.list_hunts(game_id="pokemon_red")
@@ -136,12 +144,20 @@ class SessionServiceTests(unittest.TestCase):
             self.assertEqual(resumed.hunt_encounter_count, 250)
             self.assertEqual(resumed.session_number, 2)
             self.assertEqual(state_manager.read_counter(), 250)
+            self.assertEqual(
+                state_manager.obs_counter_file.read_text(encoding="utf-8"),
+                "250",
+            )
             self.assertEqual(len(state_manager.list_hunts(game_id="pokemon_red")), 2)
 
             resumed_new_hunt = service.select_hunt(new_context.hunt_id)
             self.assertEqual(resumed_new_hunt.hunt_encounter_count, 12)
             self.assertEqual(resumed_new_hunt.hunt_catch_counter, 1)
             self.assertEqual(state_manager.read_counter(), 250)
+            self.assertEqual(
+                state_manager.obs_counter_file.read_text(encoding="utf-8"),
+                "12",
+            )
 
 
 if __name__ == "__main__":
