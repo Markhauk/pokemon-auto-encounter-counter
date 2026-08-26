@@ -268,9 +268,13 @@ Main operating view for:
 - starting a named hunt while preserving completed or paused hunts
 - encounter increment
 - start and stop controls
-- live counters
-- status display
+- focused hunt, session, and all-time counters
+- compact status and last-detection details
 - live runtime log
+
+The Dashboard intentionally avoids repeating the selected game and hunt inside
+Live Details. Monitor geometry, capture-region details, and template warnings
+are kept in `Logs / State` so the operating view stays compact.
 
 ### Capture
 
@@ -320,6 +324,8 @@ Used for:
 
 - viewing recent event history
 - viewing current local state
+- checking the selected and resolved capture monitor
+- checking the last capture region and template warnings
 - locating the output folder
 
 ## Typical User Flow

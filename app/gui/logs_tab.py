@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.capture import capture_region_summary
+from app.core.display import format_monitor_summary
 from app.services.app_controller import AppController
 
 from .frame_styles import mark_as_interface_frame
@@ -31,7 +33,22 @@ class LogsTab(QWidget):
 
         summary_group = QGroupBox("Logs and State")
         mark_as_interface_frame(summary_group)
-        summary_layout = QFormLayout(summary_group)
+        summary_layout = QHBoxLayout(summary_group)
+
+        progress_panel = QWidget()
+        progress_layout = QVBoxLayout(progress_panel)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_heading = QLabel("Progress")
+        progress_heading.setStyleSheet("font-size: 15px; font-weight: 600;")
+        progress_form = QFormLayout()
+
+        diagnostics_panel = QWidget()
+        diagnostics_layout = QVBoxLayout(diagnostics_panel)
+        diagnostics_layout.setContentsMargins(0, 0, 0, 0)
+        diagnostics_heading = QLabel("Diagnostics")
+        diagnostics_heading.setStyleSheet("font-size: 15px; font-weight: 600;")
+        diagnostics_form = QFormLayout()
+
         self.current_counter_value = QLabel("0")
         self.current_catch_value = QLabel("0")
         self.current_event_value = QLabel("none")
@@ -43,20 +60,42 @@ class LogsTab(QWidget):
         self.current_session_counter_value = QLabel("0")
         self.current_filter_value = QLabel("N/A")
         self.current_label_value = QLabel("N/A")
+        self.capture_monitor_value = QLabel("N/A")
+        self.resolved_monitor_value = QLabel("N/A")
+        self.last_capture_region_value = QLabel("N/A")
+        self.template_warnings_value = QLabel("None")
         self.output_dir_value = QLabel(self.controller.get_output_dir())
+        self.resolved_monitor_value.setWordWrap(True)
+        self.last_capture_region_value.setWordWrap(True)
+        self.template_warnings_value.setWordWrap(True)
         self.output_dir_value.setWordWrap(True)
-        summary_layout.addRow("All-time encounters", self.current_counter_value)
-        summary_layout.addRow("All-time catches", self.current_catch_value)
-        summary_layout.addRow("Game", self.current_game_value)
-        summary_layout.addRow("Hunt", self.current_hunt_value)
-        summary_layout.addRow("Hunt encounters", self.current_hunt_counter_value)
-        summary_layout.addRow("Hunt catches", self.current_hunt_catch_value)
-        summary_layout.addRow("Session", self.current_session_value)
-        summary_layout.addRow("Session encounters", self.current_session_counter_value)
-        summary_layout.addRow("Last event", self.current_event_value)
-        summary_layout.addRow("Last filter", self.current_filter_value)
-        summary_layout.addRow("Active label", self.current_label_value)
-        summary_layout.addRow("Output folder", self.output_dir_value)
+
+        progress_form.addRow("Game", self.current_game_value)
+        progress_form.addRow("Hunt", self.current_hunt_value)
+        progress_form.addRow("Hunt encounters", self.current_hunt_counter_value)
+        progress_form.addRow("Hunt catches", self.current_hunt_catch_value)
+        progress_form.addRow("Session", self.current_session_value)
+        progress_form.addRow("Session encounters", self.current_session_counter_value)
+        progress_form.addRow("All-time encounters", self.current_counter_value)
+        progress_form.addRow("All-time catches", self.current_catch_value)
+
+        diagnostics_form.addRow("Last event", self.current_event_value)
+        diagnostics_form.addRow("Last filter", self.current_filter_value)
+        diagnostics_form.addRow("Active label", self.current_label_value)
+        diagnostics_form.addRow("Capture monitor", self.capture_monitor_value)
+        diagnostics_form.addRow("Resolved monitor", self.resolved_monitor_value)
+        diagnostics_form.addRow("Last capture region", self.last_capture_region_value)
+        diagnostics_form.addRow("Template warnings", self.template_warnings_value)
+        diagnostics_form.addRow("Output folder", self.output_dir_value)
+
+        progress_layout.addWidget(progress_heading)
+        progress_layout.addLayout(progress_form)
+        progress_layout.addStretch(1)
+        diagnostics_layout.addWidget(diagnostics_heading)
+        diagnostics_layout.addLayout(diagnostics_form)
+        diagnostics_layout.addStretch(1)
+        summary_layout.addWidget(progress_panel, 1)
+        summary_layout.addWidget(diagnostics_panel, 1)
 
         button_row = QHBoxLayout()
         self.refresh_button = QPushButton("Refresh")
@@ -83,10 +122,12 @@ class LogsTab(QWidget):
         self.open_output_button.clicked.connect(self._open_output_folder)
         self.controller.snapshot_changed.connect(self._apply_snapshot)
         self.controller.log_received.connect(self._append_live_log)
+        self.controller.config_changed.connect(self._handle_config_changed)
 
     def refresh(self) -> None:
         state = self.controller.get_state_dict()
         self._apply_snapshot(state)
+        self._refresh_diagnostics()
         self.raw_state_view.setPlainText(self.controller.get_state_text())
 
         recent_events = self.controller.get_recent_events(limit=50)
@@ -121,6 +162,33 @@ class LogsTab(QWidget):
         self.current_session_counter_value.setText(str(snapshot.get("session_encounter_count", 0)))
         self.current_filter_value.setText(str(snapshot.get("last_filter_name", "N/A") or "N/A"))
         self.current_label_value.setText(str(snapshot.get("active_label", "N/A") or "N/A"))
+        capture_region = snapshot.get("capture_region")
+        if isinstance(capture_region, dict):
+            self.last_capture_region_value.setText(capture_region_summary(capture_region))
+        else:
+            self.last_capture_region_value.setText("N/A")
+
+    def _refresh_diagnostics(self) -> None:
+        display_setup = self.controller.get_display_setup()
+        try:
+            monitor = self.controller.get_selected_capture_monitor(display_setup=display_setup)
+        except ValueError as exc:
+            self.capture_monitor_value.setText("Unavailable")
+            self.resolved_monitor_value.setText(str(exc))
+        else:
+            self.capture_monitor_value.setText(f"Monitor {monitor['index']}")
+            self.resolved_monitor_value.setText(format_monitor_summary(monitor))
+
+        active_game_id = self.controller.get_active_game_id()
+        missing_templates = [
+            status.filter_name
+            for status in self.controller.get_template_statuses(game_id=active_game_id)
+            if status.status_label() != "Found"
+        ]
+        self.template_warnings_value.setText(", ".join(missing_templates) or "None")
+
+    def _handle_config_changed(self, _config: dict[str, object]) -> None:
+        self._refresh_diagnostics()
 
     def _append_live_log(self, payload: dict[str, object]) -> None:
         timestamp = str(payload.get("timestamp", ""))

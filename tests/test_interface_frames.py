@@ -252,6 +252,23 @@ class InterfaceFrameTests(unittest.TestCase):
             self.assertEqual(dashboard.obs_counter_button.text(), "OBS Live Counter...")
             self.assertGreaterEqual(dashboard.hunt_combo.count(), 1)
             self.assertEqual(dashboard.hunt_encounter_value.text(), "0")
+            self.assertFalse(hasattr(dashboard, "setup_summary_label"))
+            self.assertFalse(hasattr(dashboard, "capture_region_value"))
+            dashboard_groups = {
+                group.title(): group for group in dashboard.findChildren(QGroupBox)
+            }
+            self.assertEqual(dashboard_groups["Counters"].layout().rowCount(), 6)
+            self.assertEqual(dashboard_groups["Live Details"].layout().rowCount(), 6)
+            self.assertTrue(
+                dashboard_groups["Live Details"].isAncestorOf(dashboard.last_score_value)
+            )
+            self.assertTrue(dashboard.log_box.isReadOnly())
+            self.assertEqual(dashboard.log_box.document().maximumBlockCount(), 200)
+
+            logs_tab = expectations[3][0]
+            self.assertIsInstance(logs_tab, LogsTab)
+            self.assertEqual(logs_tab.capture_monitor_value.text(), "Unavailable")
+            self.assertTrue(logs_tab.resolved_monitor_value.text())
 
             window = MainWindow(controller)
             self.assertEqual(window.tabs.tabText(2), "Capture")
@@ -305,6 +322,11 @@ class InterfaceFrameTests(unittest.TestCase):
                 capture_preview.assert_called_once_with(
                     display_setup={"capture_monitor_index": 2}
                 )
+
+                logs_tab = LogsTab(controller)
+                self.assertEqual(logs_tab.capture_monitor_value.text(), "Monitor 2")
+                self.assertIn("2560x1440", logs_tab.resolved_monitor_value.text())
+                self.assertTrue(logs_tab.last_capture_region_value.text())
 
     def test_styles_only_target_frame_group_boxes(self) -> None:
         type_1 = build_interface_frame_stylesheet(FRAME_TYPE_1)
