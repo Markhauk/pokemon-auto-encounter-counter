@@ -63,6 +63,7 @@ class DetectorSessionTests(unittest.TestCase):
                 hunt_catch_counter=1,
                 session_start_hunt_counter=40,
             )
+            runtime_logs: list[dict[str, object]] = []
             engine = EncounterCounterEngine(
                 filters=[filter_definition],
                 encounter_increment=3,
@@ -70,6 +71,7 @@ class DetectorSessionTests(unittest.TestCase):
                 event_logger=event_logger,
                 template_manager=TemplateManager(templates_dir),
                 session_context=context,
+                log_handler=runtime_logs.append,
             )
 
             engine.record_filter_event(filter_definition, 0.91)
@@ -88,6 +90,12 @@ class DetectorSessionTests(unittest.TestCase):
             self.assertEqual(event["hunt_id"], "pokemon_red-hunt-0001")
             self.assertEqual(event["hunt_encounter_count"], 43)
             self.assertEqual(event["session_start_hunt_counter"], 40)
+            self.assertEqual(
+                runtime_logs[-1]["message"],
+                "WILD [encounter_start] | +3 | Hunt encounters: 43 | Score: 0.9",
+            )
+            self.assertNotIn("all_time", str(runtime_logs[-1]["message"]))
+            self.assertNotIn("catch", str(runtime_logs[-1]["message"]).lower())
 
 
 if __name__ == "__main__":

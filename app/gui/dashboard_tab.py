@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -22,6 +24,35 @@ from app.services.app_controller import AppController
 from .frame_styles import mark_as_interface_frame
 from .new_hunt_dialog import NewHuntDialog
 from .obs_counter_dialog import ObsCounterDialog
+
+
+_FRACTIONAL_TIMESTAMP = re.compile(
+    r"^(?P<whole>.*\d{2}:\d{2}:\d{2})\.(?P<fraction>\d+)(?P<suffix>Z|[+-]\d{2}:\d{2})?$"
+)
+_COUNTING_EVENT_TYPES = {"catch", "encounter_start", "fled"}
+
+
+def compact_log_timestamp(value: object) -> str:
+    """Limit fractional seconds to one digit without changing the timezone."""
+    timestamp = str(value or "")
+    match = _FRACTIONAL_TIMESTAMP.match(timestamp)
+    if match is None:
+        return timestamp
+    suffix = match.group("suffix") or ""
+    return f"{match.group('whole')}.{match.group('fraction')[0]}{suffix}"
+
+
+def format_dashboard_log_event(event: dict[str, object]) -> str:
+    """Build the compact hunt-focused line used by the Dashboard history."""
+    timestamp = compact_log_timestamp(event.get("timestamp", ""))
+    filter_name = str(event.get("filter_name", "") or event.get("event", "Event"))
+    event_type = str(event.get("filter_event_type", event.get("event", "info")))
+    parts = [f"[{timestamp}] {filter_name.upper()} [{event_type}]"]
+    if event_type in _COUNTING_EVENT_TYPES:
+        parts.append(f"+{max(1, int(event.get('encounter_increment', 1)))}")
+    parts.append(f"Hunt encounters: {int(event.get('hunt_encounter_count', 0))}")
+    parts.append(f"Score: {float(event.get('last_match_score', 0.0)):.1f}")
+    return " | ".join(parts)
 
 
 class DashboardTab(QWidget):
@@ -160,16 +191,7 @@ class DashboardTab(QWidget):
 
     def _load_recent_events(self) -> None:
         recent_events = self.controller.get_recent_events(limit=12)
-        lines = []
-        for event in recent_events:
-            filter_name = str(event.get("filter_name", "") or event.get("event", ""))
-            lines.append(
-                f"{event.get('timestamp', '')} | {filter_name} | "
-                f"type={event.get('filter_event_type', event.get('event', ''))} | "
-                f"hunt={event.get('hunt_name', '')} ({event.get('hunt_encounter_count', 0)}) | "
-                f"session=#{event.get('session_number', 0)} | "
-                f"encounters={event.get('counter', 0)} | catches={event.get('catch_counter', 0)}"
-            )
+        lines = [format_dashboard_log_event(event) for event in recent_events]
         self.log_box.setPlainText("\n".join(lines))
 
     def _apply_snapshot(self, snapshot: dict[str, object]) -> None:
@@ -250,7 +272,7 @@ class DashboardTab(QWidget):
             self._loading = False
 
     def _append_log_message(self, payload: dict[str, object]) -> None:
-        timestamp = str(payload.get("timestamp", ""))
+        timestamp = compact_log_timestamp(payload.get("timestamp", ""))
         message = str(payload.get("message", ""))
         if message:
             self.log_box.appendPlainText(f"[{timestamp}] {message}")

@@ -440,20 +440,18 @@ class EncounterCounterEngine:
 
     def _build_runtime_message(self, filter_definition: FilterDefinition, score: float) -> str:
         prefix = f"{filter_definition.name.upper()} [{filter_definition.event_type}]"
-        if filter_definition.event_type == EVENT_TYPE_CATCH:
-            return (
-                f"{prefix} | +{self.encounter_increment} hunt={self.hunt_encounter_count} "
-                f"all_time={self.counter} hunt_catches={self.hunt_catch_counter} score={score:.3f}"
-            )
-        if filter_definition.event_type in {EVENT_TYPE_ENCOUNTER_START, EVENT_TYPE_FLED}:
-            return (
-                f"{prefix} | +{self.encounter_increment} hunt={self.hunt_encounter_count} "
-                f"all_time={self.counter} since_hunt_catch={self.hunt_encounters_since_last_catch} "
-                f"score={score:.3f}"
-            )
+        parts = [prefix]
+        if filter_definition.event_type in {
+            EVENT_TYPE_CATCH,
+            EVENT_TYPE_ENCOUNTER_START,
+            EVENT_TYPE_FLED,
+        }:
+            parts.append(f"+{self.encounter_increment}")
+        parts.append(f"Hunt encounters: {self.hunt_encounter_count}")
         if filter_definition.event_type == EVENT_TYPE_LABEL:
-            return f"{prefix} | label={filter_definition.name} score={score:.3f}"
-        return f"{prefix} | info score={score:.3f}"
+            parts.append(f"Label: {filter_definition.name}")
+        parts.append(f"Score: {score:.1f}")
+        return " | ".join(parts)
 
     def evaluate_filter(self, filter_definition: FilterDefinition, gray_frame: np.ndarray) -> None:
         template = self.loaded_templates.get(filter_definition.id)
