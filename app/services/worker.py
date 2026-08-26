@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -19,6 +20,8 @@ class DetectionRequest:
     save_debug_frames: bool = False
     verbose_debug: bool = False
     session_context: SessionContext | None = None
+    encounter_capture_region: dict[str, int] | None = None
+    encounter_capture_path: Path | None = None
 
 
 class DetectionWorker(QObject):
@@ -43,6 +46,8 @@ class DetectionWorker(QObject):
                     verbose_debug=self.request.verbose_debug,
                     encounter_increment=self.request.encounter_increment,
                     session_context=self.request.session_context,
+                    encounter_capture_region=self.request.encounter_capture_region,
+                    encounter_capture_path=self.request.encounter_capture_path,
                     log_handler=self._emit_log,
                     status_handler=self._emit_status,
                 )

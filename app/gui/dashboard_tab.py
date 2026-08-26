@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -59,6 +63,8 @@ class DashboardTab(QWidget):
     def __init__(self, controller: AppController) -> None:
         super().__init__()
         self.controller = controller
+        self._encounter_capture_path = Path(self.controller.get_encounter_capture_path())
+        self._last_capture_event_at = ""
         self._build_ui()
         self._connect_signals()
         self._load_initial_state()
@@ -154,9 +160,30 @@ class DashboardTab(QWidget):
         self.log_box.document().setMaximumBlockCount(200)
         log_layout.addWidget(self.log_box)
 
+        capture_group = QGroupBox("Encounter Capture")
+        mark_as_interface_frame(capture_group)
+        capture_layout = QVBoxLayout(capture_group)
+        self.encounter_capture_label = QLabel("Waiting for the next encounter.")
+        self.encounter_capture_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.encounter_capture_label.setMinimumSize(300, 170)
+        self.encounter_capture_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        self.encounter_capture_label.setStyleSheet("border: 1px solid #666;")
+        self.encounter_capture_info = QLabel("Full monitor image updates after a counted encounter.")
+        self.encounter_capture_info.setWordWrap(True)
+        self.encounter_capture_info.setStyleSheet("color: #b8b8b8;")
+        capture_layout.addWidget(self.encounter_capture_label, 1)
+        capture_layout.addWidget(self.encounter_capture_info)
+
+        runtime_row = QHBoxLayout()
+        runtime_row.addWidget(log_group, 2)
+        runtime_row.addWidget(capture_group, 1)
+
         root_layout.addWidget(controls_group)
         root_layout.addLayout(summary_row)
-        root_layout.addWidget(log_group, 1)
+        root_layout.addLayout(runtime_row, 1)
 
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_scan)
@@ -186,6 +213,9 @@ class DashboardTab(QWidget):
 
         snapshot = self.controller.build_idle_snapshot()
         self._apply_snapshot(snapshot)
+        if self._encounter_capture_path.exists() and not self._last_capture_event_at:
+            self._last_capture_event_at = "saved"
+            self._load_encounter_capture("")
         self._apply_runtime_status(self.controller.get_runtime_status())
         self._load_recent_events()
 
@@ -209,6 +239,36 @@ class DashboardTab(QWidget):
         self.last_event_at_value.setText(str(snapshot.get("last_event_at", "N/A") or "N/A"))
         self.last_filter_value.setText(str(snapshot.get("last_filter_name", "N/A") or "N/A"))
         self.active_label_value.setText(str(snapshot.get("active_label", "N/A") or "N/A"))
+
+        capture_at = str(snapshot.get("last_encounter_capture_at", "") or "")
+        if capture_at and capture_at != self._last_capture_event_at:
+            self._last_capture_event_at = capture_at
+            self._load_encounter_capture(capture_at)
+
+    def _load_encounter_capture(self, event_at: str) -> None:
+        pixmap = QPixmap(str(self._encounter_capture_path))
+        if pixmap.isNull():
+            self.encounter_capture_label.clear()
+            self.encounter_capture_label.setText("Encounter captured, but the image is unavailable.")
+            self.encounter_capture_info.setText(
+                compact_log_timestamp(event_at)
+                if event_at and event_at != "saved"
+                else "Last saved encounter capture"
+            )
+            return
+        self.encounter_capture_label.setPixmap(
+            pixmap.scaled(
+                self.encounter_capture_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        if event_at and event_at != "saved":
+            self.encounter_capture_info.setText(
+                f"Full monitor captured at {compact_log_timestamp(event_at)}"
+            )
+        else:
+            self.encounter_capture_info.setText("Last saved encounter capture")
 
     def _apply_runtime_status(self, status: str) -> None:
         self.status_value.setText(status)
@@ -355,3 +415,8 @@ class DashboardTab(QWidget):
             self.verbose_debug_checkbox.setChecked(bool(debug.get("verbose_debug", False)))
         self.increment_spin.setValue(int(config.get("encounter_increment", self.increment_spin.value())))
         self._update_button_state()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        super().resizeEvent(event)
+        if self._last_capture_event_at and self._encounter_capture_path.exists():
+            self._load_encounter_capture(self._last_capture_event_at)

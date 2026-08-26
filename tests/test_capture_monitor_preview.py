@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch, sentinel
 
 from app.core.event_logger import EventLogger
-from app.core.paths import MONITOR_PREVIEW_FILE
+from app.core.paths import ENCOUNTER_CAPTURE_FILE, MONITOR_PREVIEW_FILE
 from app.core.state_manager import StateManager
 from app.services.app_controller import AppController
 from app.services.config_service import ConfigService
@@ -56,6 +56,26 @@ class CaptureMonitorPreviewTests(unittest.TestCase):
             self.assertEqual(payload["monitor_index"], 2)
             self.assertEqual(payload["monitor"], monitors[1])
             self.assertEqual(payload["path"], str(MONITOR_PREVIEW_FILE))
+
+            with (
+                patch("app.services.config_service._read_physical_monitors", return_value=monitors),
+                patch.object(controller, "get_physical_monitors", return_value=monitors),
+                patch("app.services.app_controller.QThread.start"),
+            ):
+                controller.config_service.set_display_setup({"capture_monitor_index": 2})
+                controller.start_scan(
+                    encounter_increment=1,
+                    save_debug_frames=False,
+                    verbose_debug=False,
+                )
+
+            self.assertIsNotNone(controller._worker)
+            request = controller._worker.request  # type: ignore[union-attr]
+            self.assertEqual(request.encounter_capture_region, expected_region)
+            self.assertEqual(
+                request.encounter_capture_path,
+                output_dir / ENCOUNTER_CAPTURE_FILE.name,
+            )
 
 
 if __name__ == "__main__":

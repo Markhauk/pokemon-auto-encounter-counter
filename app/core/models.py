@@ -115,6 +115,7 @@ class CounterSnapshot:
     hunt_last_catch_at_encounter: int = 0
     hunt_encounters_since_last_catch: int = 0
     session_start_hunt_counter: int = 0
+    last_encounter_capture_at: Optional[str] = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)

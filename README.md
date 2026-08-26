@@ -271,12 +271,16 @@ Main operating view for:
 - focused hunt, session, and all-time counters
 - compact status and last-detection details
 - a compact hunt-focused runtime log with one-decimal match scores
+- a small full-monitor encounter capture beside the runtime log
 
 The Dashboard intentionally avoids repeating the selected game and hunt inside
 Live Details. Monitor geometry, capture-region details, and template warnings
 are kept in `Logs / State` so the operating view stays compact.
 The runtime log omits session, catch, and all-time totals; those values remain
 available in the counters, `Logs / State`, and the complete event files.
+The encounter capture is refreshed only after a counted encounter, catch, or
+flee event. It does not take additional full-monitor screenshots on ordinary
+scan frames.
 
 ### Capture
 

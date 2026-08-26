@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable, Optional
 
 import cv2
@@ -54,6 +55,8 @@ class EncounterCounterEngine:
         log_handler: Optional[LogHandler] = None,
         status_handler: Optional[StatusHandler] = None,
         session_context: SessionContext | None = None,
+        encounter_capture_region: dict[str, int] | None = None,
+        encounter_capture_path: Path | None = None,
     ) -> None:
         self.running = True
         self.mode_key = mode_key if filters is None else "filters"
@@ -70,6 +73,7 @@ class EncounterCounterEngine:
         self.last_filter_name = ""
         self.last_filter_event_type = ""
         self.active_label = ""
+        self.last_encounter_capture_at: Optional[str] = None
 
         self.last_catch_at_encounter = 0
         self.encounters_since_last_catch = 0
@@ -86,6 +90,10 @@ class EncounterCounterEngine:
         self.template_manager = template_manager or TemplateManager()
         self.log_handler = log_handler
         self.status_handler = status_handler
+        self.encounter_capture_region = (
+            dict(encounter_capture_region) if encounter_capture_region is not None else None
+        )
+        self.encounter_capture_path = encounter_capture_path
         self.session_context = session_context
         self.game_id = session_context.game_id if session_context is not None else ""
         self.game_name = session_context.game_name if session_context is not None else ""
@@ -284,6 +292,7 @@ class EncounterCounterEngine:
             hunt_last_catch_at_encounter=self.hunt_last_catch_at_encounter,
             hunt_encounters_since_last_catch=self.hunt_encounters_since_last_catch,
             session_start_hunt_counter=self.session_start_hunt_counter,
+            last_encounter_capture_at=self.last_encounter_capture_at,
         )
 
     def emit_status(self, *, status: str, error_message: str = "") -> None:
@@ -436,7 +445,23 @@ class EncounterCounterEngine:
 
         self.save_state(status="Running")
         self.append_event_log(filter_definition, score)
+        if event_type in {
+            EVENT_TYPE_CATCH,
+            EVENT_TYPE_ENCOUNTER_START,
+            EVENT_TYPE_FLED,
+        }:
+            self._capture_encounter_monitor()
         self.log_event(self._build_runtime_message(filter_definition, score))
+
+    def _capture_encounter_monitor(self) -> None:
+        if self.encounter_capture_region is None or self.encounter_capture_path is None:
+            return
+        try:
+            frame_bgr = grab_region(self.encounter_capture_region)
+            save_image(self.encounter_capture_path, frame_bgr)
+            self.last_encounter_capture_at = self.last_event_at or self.now_iso()
+        except Exception as exc:
+            self.log_error(f"[WARN] Encounter monitor capture failed: {exc}")
 
     def _build_runtime_message(self, filter_definition: FilterDefinition, score: float) -> str:
         prefix = f"{filter_definition.name.upper()} [{filter_definition.event_type}]"

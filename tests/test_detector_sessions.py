@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch, sentinel
 
 import cv2
 import numpy as np
@@ -64,6 +65,13 @@ class DetectorSessionTests(unittest.TestCase):
                 session_start_hunt_counter=40,
             )
             runtime_logs: list[dict[str, object]] = []
+            encounter_capture_path = output_dir / "last_encounter_monitor.png"
+            encounter_capture_region = {
+                "left": -2560,
+                "top": 40,
+                "width": 2560,
+                "height": 1440,
+            }
             engine = EncounterCounterEngine(
                 filters=[filter_definition],
                 encounter_increment=3,
@@ -72,9 +80,18 @@ class DetectorSessionTests(unittest.TestCase):
                 template_manager=TemplateManager(templates_dir),
                 session_context=context,
                 log_handler=runtime_logs.append,
+                encounter_capture_region=encounter_capture_region,
+                encounter_capture_path=encounter_capture_path,
             )
 
-            engine.record_filter_event(filter_definition, 0.91)
+            with (
+                patch("app.core.detector.grab_region", return_value=sentinel.monitor_frame) as grab,
+                patch("app.core.detector.save_image") as save_image,
+            ):
+                engine.record_filter_event(filter_definition, 0.91)
+
+            grab.assert_called_once_with(encounter_capture_region)
+            save_image.assert_called_once_with(encounter_capture_path, sentinel.monitor_frame)
 
             self.assertEqual(engine.counter, 103)
             self.assertEqual(engine.hunt_encounter_count, 43)
@@ -83,6 +100,7 @@ class DetectorSessionTests(unittest.TestCase):
             self.assertEqual(snapshot.game_id, "pokemon_red")
             self.assertEqual(snapshot.session_number, 2)
             self.assertEqual(snapshot.session_encounter_count, 3)
+            self.assertEqual(snapshot.last_encounter_capture_at, snapshot.last_event_at)
             event = event_logger.read_recent_events(limit=1)[0]
             self.assertEqual(event["game_id"], "pokemon_red")
             self.assertEqual(event["session_id"], "pokemon_red-session-0002")
@@ -96,6 +114,14 @@ class DetectorSessionTests(unittest.TestCase):
             )
             self.assertNotIn("all_time", str(runtime_logs[-1]["message"]))
             self.assertNotIn("catch", str(runtime_logs[-1]["message"]).lower())
+
+            successful_capture_at = engine.last_encounter_capture_at
+            with patch("app.core.detector.grab_region", side_effect=OSError("capture failed")):
+                engine.record_filter_event(filter_definition, 0.92)
+
+            self.assertEqual(engine.last_encounter_capture_at, successful_capture_at)
+            self.assertEqual(engine.hunt_encounter_count, 46)
+            self.assertEqual(event_logger.read_recent_events(limit=1)[0]["hunt_encounter_count"], 46)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,13 @@ from app.core.display import (
 )
 from app.core.event_logger import EventLogger
 from app.core.filters import FILTER_EVENT_TYPES, FilterDefinition, GameDefinition
-from app.core.paths import DEBUG_FRAME_FILE, MONITOR_PREVIEW_FILE, OUTPUT_DIR, TEMPLATE_SOURCE_FILE
+from app.core.paths import (
+    DEBUG_FRAME_FILE,
+    ENCOUNTER_CAPTURE_FILE,
+    MONITOR_PREVIEW_FILE,
+    OUTPUT_DIR,
+    TEMPLATE_SOURCE_FILE,
+)
 from app.core.regions import clamp_region, expand_region
 from app.core.state_manager import StateManager
 from app.core.templates import TemplateManager
@@ -177,6 +183,9 @@ class AppController(QObject):
 
     def get_debug_frame_path(self) -> str:
         return str(DEBUG_FRAME_FILE)
+
+    def get_encounter_capture_path(self) -> str:
+        return str(self.state_manager.output_dir / ENCOUNTER_CAPTURE_FILE.name)
 
     def get_session_context(self) -> dict[str, object]:
         current = self.session_service.current_context()
@@ -535,6 +544,14 @@ class AppController(QObject):
             save_debug_frames=save_debug_frames,
             verbose_debug=verbose_debug,
             session_context=self.session_service.ensure_for_active_game(),
+            encounter_capture_region={
+                key: int(value)
+                for key, value in self.get_selected_capture_monitor(
+                    display_setup=display_setup
+                ).items()
+                if key in {"left", "top", "width", "height"}
+            },
+            encounter_capture_path=self.state_manager.output_dir / ENCOUNTER_CAPTURE_FILE.name,
         )
 
         self._thread = QThread(self)

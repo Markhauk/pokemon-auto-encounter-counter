@@ -231,7 +231,13 @@ class InterfaceFrameTests(unittest.TestCase):
                 expectations = (
                     (
                         DashboardTab(controller),
-                        {"Scanner Controls", "Counters", "Live Details", "Live Runtime Log"},
+                        {
+                            "Scanner Controls",
+                            "Counters",
+                            "Live Details",
+                            "Live Runtime Log",
+                            "Encounter Capture",
+                        },
                     ),
                     (CaptureSettingsTab(controller), {"Capture Monitor", "Full Monitor Preview"}),
                     (TemplatesTab(controller), {"Template Preview"}),
@@ -264,6 +270,17 @@ class InterfaceFrameTests(unittest.TestCase):
             )
             self.assertTrue(dashboard.log_box.isReadOnly())
             self.assertEqual(dashboard.log_box.document().maximumBlockCount(), 200)
+            self.assertIn("Full monitor", dashboard.encounter_capture_info.text())
+            encounter_snapshot = controller.build_idle_snapshot()
+            encounter_snapshot.update(
+                {
+                    "last_encounter_capture_at": "2026-08-26T16:32:46.987654Z",
+                }
+            )
+            with patch.object(dashboard, "_load_encounter_capture") as load_capture:
+                dashboard._apply_snapshot(encounter_snapshot)
+                dashboard._apply_snapshot(encounter_snapshot)
+            load_capture.assert_called_once_with("2026-08-26T16:32:46.987654Z")
 
             logs_tab = expectations[3][0]
             self.assertIsInstance(logs_tab, LogsTab)
